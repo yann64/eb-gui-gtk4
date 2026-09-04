@@ -20,6 +20,7 @@ pkg_check_modules(GTK4 REQUIRED IMPORTED_TARGET gtk4)
 add_library(ebguigtk4 STATIC
     shim_closecallback.cpp
     shim_actiontrigger.cpp
+    shim_userdatasignal.cpp
 )
 target_include_directories(ebguigtk4 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(ebguigtk4 PUBLIC PkgConfig::GTK4)

@@ -115,6 +115,52 @@ contract handler shape is `SUB(userData AS ANY PTR)` (matching
 shim_actiontrigger.cpp` bridges it the same way, discarding the two
 leading GTK4-specific arguments before forwarding.
 
+## A real, shipped bug found and fixed this round: `GuiButtonConnectClicked`/`GuiEntryConnectChanged` delivered the WRONG value
+
+`GuiButtonConnectClicked`/`GuiEntryConnectChanged` originally used a
+**direct** `ObjConnect(obj, "clicked"/"changed", handler, userData)`
+pass-through, with no shim at all - reasoning (never verified) that
+since these signals carry no signal-specific arguments, the native
+shape would already match the contract's own `SUB(userData AS ANY
+PTR)` shape. **This was wrong, and shipped wrong through `v0.6.0`**:
+real GTK4 signal marshaling always calls a connected handler as
+`handler(instance, user_data)` - a genuinely different shape,
+`(GObject*, gpointer)`. A 1-parameter eBasic handler still binds its
+own sole parameter to the FIRST real argument, `instance`, not
+`user_data` - so every existing `GuiButtonConnectClicked`/
+`GuiEntryConnectChanged` caller was silently receiving the *widget's
+own handle* in place of whatever real `userData` it had actually
+passed at connect time.
+
+Confirmed by direct reproduction, not assumed: a standalone spike
+connected a real `"clicked"` signal, fired it via
+`g_signal_emit_by_name`, and printed the received pointer against both
+candidates - it matched the button's own handle, never the real
+passed-in address. `eb-gtk4`'s own examples (e.g.
+`examples/hello_window`) always declare the correct 2-parameter shape
+(`SUB OnButtonClicked(btn AS GObj PTR, data AS ANY PTR)`) for exactly
+this reason - only `eb-gui-gtk4`'s own contract-shape adapter code had
+collapsed it to 1 parameter without the shim needed to make that safe.
+`eb-gui-qt6`/`eb-gui-haiku` were never affected: Qt6's own shims are
+real per-call C++ lambdas that already capture and deliver only
+`userData` (`eb_qt6_button_connect_clicked`), and Haiku's `ShimHandler`
+dispatch is likewise real custom C++ code, not a generic signal
+pass-through - both confirmed not merely assumed before ruling them
+out.
+
+**Fixed** via a new, reusable native shim
+(`native/shim_userdatasignal.cpp`), `eb_gui_gtk4_connect_userdata_signal`
+- the same "generic bridge, one struct + one trampoline" technique
+`shim_actiontrigger.cpp` already used for `GuiActionConnectTriggered`,
+generalized since every affected signal (`"clicked"`, `"changed"`,
+`"toggled"`) reduces to the identical real shape. `GuiButtonConnectClicked`/
+`GuiEntryConnectChanged` now route through it, and Round 4's own
+`GuiCheckBoxConnectToggled`/`GuiRadioButtonConnectToggled`/
+`GuiComboBoxConnectChanged` (below) were built correctly on it from the
+start. Verified via `examples/verify`'s own new regression check
+(connects with a known marker address, fires the signal, asserts the
+handler received exactly that address).
+
 ## A real bug caught before shipping: window construction needs eager registration
 
 `eb-gui`'s contract lets application code create and show windows
@@ -289,6 +335,40 @@ themselves - pair with `GuiBoxAddChildEx`'s own `expand` parameter
 (Round 2) if you want a constrained item to also visibly grow into
 leftover space.
 
+## Widgets (Round 4) - CheckBox, RadioButton, ComboBox
+
+```basic
+DIM cb AS GuiCheckBox
+cb = NewGuiCheckBox("Enable feature")
+CALL GuiCheckBoxSetChecked(cb, 1)
+
+DIM r1 AS GuiRadioButton
+r1 = NewGuiRadioButton("Option A")
+DIM r2 AS GuiRadioButton
+r2 = NewGuiRadioButton("Option B")
+CALL GuiRadioButtonSetGroup(r2, r1)   ' r1/r2 now mutually exclusive
+
+DIM combo AS GuiComboBox
+combo = NewGuiComboBox()
+CALL GuiComboBoxAddItem(combo, "First")
+CALL GuiComboBoxAddItem(combo, "Second")
+CALL GuiComboBoxSetSelectedIndex(combo, 0)
+PRINT GuiComboBoxGetSelectedText(combo)
+```
+
+Real GTK4 unifies checkbox and radio-button into ONE widget class,
+`CheckButton` (`eb-gtk4` v0.13.0) - `GuiCheckBox`/`GuiRadioButton` both
+wrap the exact same underlying widget, the contract-level TYPE being
+the only thing distinguishing their role. `GuiRadioButtonSetGroup`
+calls `CheckButtonSetGroup` directly - real GTK4 has no separate group
+object at all, unlike Qt6's own `QButtonGroup`. `GuiComboBox` binds
+`ComboBoxText` (`GtkComboBoxText`, deprecated-but-simple, chosen over
+the heavier `GtkDropDown` - see `eb-gtk4`'s own README).
+`GuiComboBoxGetSelectedText` deliberately leaks a small per-call
+buffer, same accepted precedent as `eb-gui-qt6`'s own `GuiButtonGetText`
+- real `gtk_combo_box_text_get_active_text` returns a freshly
+allocated string and the contract has no matching free function.
+
 ## Verifying
 
 - `examples/hello_window` - a plain window appears, title set through
@@ -319,8 +399,13 @@ leftover space.
   StatusBar/MenuBar/ToolBar on the same window without crashing; and
   `GuiBoxAddChildEx`/`GuiGridAttachEx`/`GuiGridSetColumnWeight`/
   `SetRowWeight` (Round 2 constraints) run without crashing, including
-  a `GuiGrid` nested inside a constrained `GuiBox` child; and
-  `GuiWidgetSetMinSize`/`SetMaxSize` (Round 3) run without crashing.
+  a `GuiGrid` nested inside a constrained `GuiBox` child;
+  `GuiWidgetSetMinSize`/`SetMaxSize` (Round 3) run without crashing;
+  `GuiButtonConnectClicked`'s own `userData` delivery is asserted
+  correct against a known marker address (the regression check for the
+  real bug fixed this round - see above); and `GuiCheckBoxConnectToggled`/
+  `GuiRadioButtonSetGroup`/`GuiComboBoxConnectChanged` (Round 4) all
+  round-trip/fire correctly via `g_signal_emit_by_name`.
 - `examples/widgets_form` - a `GuiBox` containing a `GuiLabel` +
   `GuiEntry` + `GuiButton`, clicking the button reads the entry and
   updates the label (confirmed launches and runs without crashing on

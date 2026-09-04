@@ -27,6 +27,13 @@ End Extern
 Extern "C" Lib "ebguigtk4"
     Declare Sub eb_gui_gtk4_window_set_close_callback(ByVal window AS ANY PTR, ByVal cb AS ANY PTR, ByVal userData AS ANY PTR)
     Declare Sub eb_gui_gtk4_action_connect_triggered(ByVal action AS ANY PTR, ByVal cb AS ANY PTR, ByVal userData AS ANY PTR)
+    ' Generic bridge for every plain SUB(userData AS ANY PTR)-shaped
+    ' contract signal - see shim_userdatasignal.h's own top comment for
+    ' why a direct ObjConnect pass-through silently delivers the WRONG
+    ' value (GTK4's real signal shape is (instance, user_data), and a
+    ' 1-param eBasic handler binds its own param to instance, not
+    ' user_data - confirmed by direct reproduction, not assumed).
+    Declare Sub eb_gui_gtk4_connect_userdata_signal(ByVal obj AS ANY PTR, ByVal signalName AS ZSTRING, ByVal cb AS ANY PTR, ByVal userData AS ANY PTR)
 End Extern
 
 ''' Small per-adapter association table (handle -> handle) - makes up
@@ -437,10 +444,16 @@ FUNCTION GuiButtonGetText(b AS GuiButton) AS ZSTRING
     GuiButtonGetText = ButtonGetLabel(realBtn)
 END FUNCTION
 
+''' Real bug fixed this round: a direct ObjConnect(..., "clicked", ...)
+''' pass-through silently delivered the wrong value to the contract's
+''' own 1-param handler shape (GTK4's real "clicked" signal is
+''' (GtkButton*, gpointer) - the handler's own sole parameter bound to
+''' the button itself, not the real userData). Fixed via the generic
+''' eb_gui_gtk4_connect_userdata_signal trampoline (see its own header
+''' comment) - same reasoning as this package's existing
+''' GuiActionConnectTriggered bridge.
 SUB GuiButtonConnectClicked(b AS GuiButton, handler AS ANY PTR, userData AS ANY PTR)
-    DIM realBtn AS Button
-    realBtn.handle = b.handle
-    CALL ObjConnect(realBtn, "clicked", handler, userData)
+    CALL eb_gui_gtk4_connect_userdata_signal(b.handle, "clicked", handler, userData)
 END SUB
 
 FUNCTION NewGuiLabel(text AS ZSTRING) AS GuiLabel
@@ -479,11 +492,12 @@ FUNCTION GuiEntryGetText(e AS GuiEntry) AS ZSTRING
 END FUNCTION
 
 ''' Real GtkEditable (which Entry implements) emits a real "changed"
-''' signal on every text modification - a direct ObjConnect pass-through.
+''' signal on every text modification - bridged via the same
+''' eb_gui_gtk4_connect_userdata_signal trampoline GuiButtonConnectClicked
+''' uses (see its own doc comment for why a plain ObjConnect
+''' pass-through was wrong).
 SUB GuiEntryConnectChanged(e AS GuiEntry, handler AS ANY PTR, userData AS ANY PTR)
-    DIM realEntry AS Entry
-    realEntry.handle = e.handle
-    CALL ObjConnect(realEntry, "changed", handler, userData)
+    CALL eb_gui_gtk4_connect_userdata_signal(e.handle, "changed", handler, userData)
 END SUB
 
 ''' `orientation` (0=horizontal, 1=vertical) matches GTK4's own
@@ -607,4 +621,112 @@ SUB GuiWindowSetContent(win AS GuiWindow, content AS ANY PTR)
     DIM childWidget AS Widget
     childWidget.handle = content
     CALL BoxAppend(contentBox, childWidget)
+END SUB
+
+''' Real GTK4 unifies checkbox/radio-button into ONE widget class,
+''' CheckButton - GuiCheckBox and GuiRadioButton both wrap the exact
+''' same underlying widget, the contract-level TYPE being the only
+''' thing distinguishing their role (see eb-gui's own README).
+FUNCTION NewGuiCheckBox(text AS ZSTRING) AS GuiCheckBox
+    DIM realCb AS CheckButton
+    realCb = NewCheckButton(text)
+    DIM result AS GuiCheckBox
+    result.handle = realCb.handle
+    NewGuiCheckBox = result
+END FUNCTION
+
+SUB GuiCheckBoxSetChecked(cb AS GuiCheckBox, checked AS INTEGER)
+    DIM realCb AS CheckButton
+    realCb.handle = cb.handle
+    CALL CheckButtonSetActive(realCb, checked)
+END SUB
+
+FUNCTION GuiCheckBoxIsChecked(cb AS GuiCheckBox) AS INTEGER
+    DIM realCb AS CheckButton
+    realCb.handle = cb.handle
+    GuiCheckBoxIsChecked = CheckButtonGetActive(realCb)
+END FUNCTION
+
+SUB GuiCheckBoxConnectToggled(cb AS GuiCheckBox, handler AS ANY PTR, userData AS ANY PTR)
+    CALL eb_gui_gtk4_connect_userdata_signal(cb.handle, "toggled", handler, userData)
+END SUB
+
+FUNCTION NewGuiRadioButton(text AS ZSTRING) AS GuiRadioButton
+    DIM realCb AS CheckButton
+    realCb = NewCheckButton(text)
+    DIM result AS GuiRadioButton
+    result.handle = realCb.handle
+    NewGuiRadioButton = result
+END FUNCTION
+
+SUB GuiRadioButtonSetChecked(rb AS GuiRadioButton, checked AS INTEGER)
+    DIM realCb AS CheckButton
+    realCb.handle = rb.handle
+    CALL CheckButtonSetActive(realCb, checked)
+END SUB
+
+FUNCTION GuiRadioButtonIsChecked(rb AS GuiRadioButton) AS INTEGER
+    DIM realCb AS CheckButton
+    realCb.handle = rb.handle
+    GuiRadioButtonIsChecked = CheckButtonGetActive(realCb)
+END FUNCTION
+
+SUB GuiRadioButtonConnectToggled(rb AS GuiRadioButton, handler AS ANY PTR, userData AS ANY PTR)
+    CALL eb_gui_gtk4_connect_userdata_signal(rb.handle, "toggled", handler, userData)
+END SUB
+
+''' Direct pass-through to gtk_check_button_set_group - real GTK4 has
+''' no separate group object at all, a CheckButton is simply chained
+''' directly to another one.
+SUB GuiRadioButtonSetGroup(rb AS GuiRadioButton, firstInGroup AS GuiRadioButton)
+    DIM realRb AS CheckButton
+    realRb.handle = rb.handle
+    DIM realFirst AS CheckButton
+    realFirst.handle = firstInGroup.handle
+    CALL CheckButtonSetGroup(realRb, realFirst)
+END SUB
+
+FUNCTION NewGuiComboBox() AS GuiComboBox
+    DIM realCombo AS ComboBoxText
+    realCombo = NewComboBoxText()
+    DIM result AS GuiComboBox
+    result.handle = realCombo.handle
+    NewGuiComboBox = result
+END FUNCTION
+
+SUB GuiComboBoxAddItem(cb AS GuiComboBox, text AS ZSTRING)
+    DIM realCombo AS ComboBoxText
+    realCombo.handle = cb.handle
+    CALL ComboBoxTextAppendText(realCombo, text)
+END SUB
+
+FUNCTION GuiComboBoxGetSelectedIndex(cb AS GuiComboBox) AS INTEGER
+    DIM realCombo AS ComboBoxText
+    realCombo.handle = cb.handle
+    GuiComboBoxGetSelectedIndex = ComboBoxTextGetActive(realCombo)
+END FUNCTION
+
+SUB GuiComboBoxSetSelectedIndex(cb AS GuiComboBox, index AS INTEGER)
+    DIM realCombo AS ComboBoxText
+    realCombo.handle = cb.handle
+    CALL ComboBoxTextSetActive(realCombo, index)
+END SUB
+
+''' Real gtk_combo_box_text_get_active_text returns a newly `g_malloc`'d
+''' string - the contract has no matching free function, so (matching
+''' eb-gui-qt6's own identical GuiButtonGetText precedent) this
+''' deliberately accepts and documents a small per-call leak rather
+''' than redesigning the contract or risking a dangling pointer.
+FUNCTION GuiComboBoxGetSelectedText(cb AS GuiComboBox) AS ZSTRING
+    DIM realCombo AS ComboBoxText
+    realCombo.handle = cb.handle
+    DIM raw AS ANY PTR
+    raw = ComboBoxTextGetActiveText(realCombo)
+    DIM z AS ZSTRING
+    z = raw
+    GuiComboBoxGetSelectedText = z
+END FUNCTION
+
+SUB GuiComboBoxConnectChanged(cb AS GuiComboBox, handler AS ANY PTR, userData AS ANY PTR)
+    CALL eb_gui_gtk4_connect_userdata_signal(cb.handle, "changed", handler, userData)
 END SUB

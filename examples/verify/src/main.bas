@@ -172,6 +172,71 @@ CALL GuiWidgetSetMinSize(fixedBtn.handle, 200, 40)
 CALL GuiWidgetSetMaxSize(fixedBtn.handle, 300, 60)
 PRINT "Round 3 min/max size (GuiWidgetSetMinSize/SetMaxSize) ran without crashing"
 
+' 8. Round 4: CheckBox/RadioButton/ComboBox. Also re-confirms the real
+' userData delivery bug fix (GuiButtonConnectClicked/GuiEntryConnectChanged
+' silently received the wrong pointer before this round - see README)
+' by checking a toggle/changed handler actually fires via g_signal_emit_by_name.
+Extern "C" Lib "gobject-2.0"
+    Declare Sub g_signal_emit_by_name(ByVal instance AS ANY PTR, ByVal detailedSignal AS ZSTRING)
+End Extern
+
+DIM userDataMarker AS INTEGER
+userDataMarker = 12345
+DIM userDataReceived AS ANY PTR
+DIM regressionBtn AS GuiButton
+regressionBtn = NewGuiButton("regression")
+SUB OnRegressionClicked(userData AS ANY PTR)
+    userDataReceived = userData
+END SUB
+CALL GuiButtonConnectClicked(regressionBtn, @OnRegressionClicked, @userDataMarker)
+CALL g_signal_emit_by_name(regressionBtn.handle, "clicked")
+IF userDataReceived = @userDataMarker THEN
+    PRINT "GuiButtonConnectClicked userData delivery: correct"
+ELSE
+    PRINT "GuiButtonConnectClicked userData delivery: WRONG - regression!"
+END IF
+
+DIM cb AS GuiCheckBox
+cb = NewGuiCheckBox("Enable feature")
+PRINT "checkbox initial: ", GuiCheckBoxIsChecked(cb)
+CALL GuiCheckBoxSetChecked(cb, 1)
+PRINT "checkbox after set: ", GuiCheckBoxIsChecked(cb)
+
+DIM checkboxToggleCount AS INTEGER
+checkboxToggleCount = 0
+SUB OnCheckBoxToggled(userData AS ANY PTR)
+    checkboxToggleCount = checkboxToggleCount + 1
+END SUB
+CALL GuiCheckBoxConnectToggled(cb, @OnCheckBoxToggled, 0)
+CALL g_signal_emit_by_name(cb.handle, "toggled")
+PRINT "checkbox toggle count after emit: ", checkboxToggleCount
+
+DIM r1 AS GuiRadioButton
+r1 = NewGuiRadioButton("Option A")
+DIM r2 AS GuiRadioButton
+r2 = NewGuiRadioButton("Option B")
+CALL GuiRadioButtonSetGroup(r2, r1)
+CALL GuiRadioButtonSetChecked(r1, 1)
+PRINT "r1: ", GuiRadioButtonIsChecked(r1)
+PRINT "r2 (grouped, expect 0): ", GuiRadioButtonIsChecked(r2)
+
+DIM combo AS GuiComboBox
+combo = NewGuiComboBox()
+CALL GuiComboBoxAddItem(combo, "First")
+CALL GuiComboBoxAddItem(combo, "Second")
+CALL GuiComboBoxSetSelectedIndex(combo, 1)
+PRINT "combo selected index: ", GuiComboBoxGetSelectedIndex(combo)
+PRINT "combo selected text: ", GuiComboBoxGetSelectedText(combo)
+
+DIM comboChangedCount AS INTEGER
+comboChangedCount = 0
+SUB OnComboChanged(userData AS ANY PTR)
+    comboChangedCount = comboChangedCount + 1
+END SUB
+CALL GuiComboBoxConnectChanged(combo, @OnComboChanged, 0)
+CALL g_signal_emit_by_name(combo.handle, "changed")
+PRINT "combo changed count: ", comboChangedCount
+
 ' 5. GuiTimer, and (via its own callback) GuiApplicationQuit stopping
 ' GuiApplicationRun - a more realistic shape than calling Quit before
 ' Run even starts (which this backend tolerates with a noisy assertion,
