@@ -237,6 +237,35 @@ CALL GuiComboBoxConnectChanged(combo, @OnComboChanged, 0)
 CALL g_signal_emit_by_name(combo.handle, "changed")
 PRINT "combo changed count: ", comboChangedCount
 
+' 9. Round 5: ProgressBar/Slider.
+DIM pb AS GuiProgressBar
+pb = NewGuiProgressBar()
+PRINT "progress bar initial: ", GuiProgressBarGetValue(pb)
+CALL GuiProgressBarSetRange(pb, 0, 200)
+CALL GuiProgressBarSetValue(pb, 150)
+PRINT "progress bar after range 0-200, set 150: ", GuiProgressBarGetValue(pb)
+
+DIM slider AS GuiSlider
+slider = NewGuiSlider(0)
+CALL GuiSliderSetRange(slider, 0, 200)
+CALL GuiSliderSetValue(slider, 150)
+PRINT "slider after range 0-200, set 150: ", GuiSliderGetValue(slider)
+
+DIM sliderMarker AS INTEGER
+sliderMarker = 55555
+DIM sliderReceived AS ANY PTR
+SUB OnSliderValueChanged(userData AS ANY PTR)
+    sliderReceived = userData
+END SUB
+CALL GuiSliderConnectValueChanged(slider, @OnSliderValueChanged, @sliderMarker)
+CALL GuiSliderSetValue(slider, 75)
+IF sliderReceived = @sliderMarker THEN
+    PRINT "GuiSliderConnectValueChanged userData delivery: correct"
+ELSE
+    PRINT "GuiSliderConnectValueChanged userData delivery: WRONG - regression!"
+END IF
+PRINT "Round 5 widgets (ProgressBar/Slider) ran without crashing"
+
 ' 5. GuiTimer, and (via its own callback) GuiApplicationQuit stopping
 ' GuiApplicationRun - a more realistic shape than calling Quit before
 ' Run even starts (which this backend tolerates with a noisy assertion,

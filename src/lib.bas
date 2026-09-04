@@ -730,3 +730,104 @@ END FUNCTION
 SUB GuiComboBoxConnectChanged(cb AS GuiComboBox, handler AS ANY PTR, userData AS ANY PTR)
     CALL eb_gui_gtk4_connect_userdata_signal(cb.handle, "changed", handler, userData)
 END SUB
+
+''' Real GTK4 has no integer min/max/value model for GtkProgressBar at
+''' all - just a 0.0-1.0 fraction. This adapter tracks each progress
+''' bar's own (min, max, value) itself so GetValue can return the
+''' tracked integer directly rather than re-deriving a lossy one back
+''' from the fraction.
+DIM ebGuiGtk4ProgressBarKeys(64) AS ANY PTR
+DIM ebGuiGtk4ProgressBarMins(64) AS INTEGER
+DIM ebGuiGtk4ProgressBarMaxs(64) AS INTEGER
+DIM ebGuiGtk4ProgressBarValues(64) AS INTEGER
+DIM ebGuiGtk4ProgressBarCount AS INTEGER
+
+FUNCTION EbGuiGtk4ProgressBarFindIndex(handle AS ANY PTR) AS INTEGER
+    DIM i AS INTEGER
+    FOR i = 0 TO ebGuiGtk4ProgressBarCount - 1
+        IF ebGuiGtk4ProgressBarKeys(i) = handle THEN
+            EbGuiGtk4ProgressBarFindIndex = i
+            EXIT FUNCTION
+        END IF
+    NEXT i
+    EbGuiGtk4ProgressBarFindIndex = -1
+END FUNCTION
+
+FUNCTION NewGuiProgressBar() AS GuiProgressBar
+    DIM realPb AS ProgressBar
+    realPb = NewProgressBar()
+    ebGuiGtk4ProgressBarKeys(ebGuiGtk4ProgressBarCount) = realPb.handle
+    ebGuiGtk4ProgressBarMins(ebGuiGtk4ProgressBarCount) = 0
+    ebGuiGtk4ProgressBarMaxs(ebGuiGtk4ProgressBarCount) = 100
+    ebGuiGtk4ProgressBarValues(ebGuiGtk4ProgressBarCount) = 0
+    ebGuiGtk4ProgressBarCount = ebGuiGtk4ProgressBarCount + 1
+    DIM result AS GuiProgressBar
+    result.handle = realPb.handle
+    NewGuiProgressBar = result
+END FUNCTION
+
+SUB GuiProgressBarSetRange(pb AS GuiProgressBar, min AS INTEGER, max AS INTEGER)
+    DIM i AS INTEGER
+    i = EbGuiGtk4ProgressBarFindIndex(pb.handle)
+    ebGuiGtk4ProgressBarMins(i) = min
+    ebGuiGtk4ProgressBarMaxs(i) = max
+END SUB
+
+FUNCTION GuiProgressBarGetValue(pb AS GuiProgressBar) AS INTEGER
+    DIM i AS INTEGER
+    i = EbGuiGtk4ProgressBarFindIndex(pb.handle)
+    GuiProgressBarGetValue = ebGuiGtk4ProgressBarValues(i)
+END FUNCTION
+
+SUB GuiProgressBarSetValue(pb AS GuiProgressBar, value AS INTEGER)
+    DIM i AS INTEGER
+    i = EbGuiGtk4ProgressBarFindIndex(pb.handle)
+    ebGuiGtk4ProgressBarValues(i) = value
+    DIM realPb AS ProgressBar
+    realPb.handle = pb.handle
+    DIM minV AS INTEGER
+    DIM maxV AS INTEGER
+    minV = ebGuiGtk4ProgressBarMins(i)
+    maxV = ebGuiGtk4ProgressBarMaxs(i)
+    DIM fraction AS DOUBLE
+    IF maxV > minV THEN
+        fraction = CDbl(value - minV) / CDbl(maxV - minV)
+    ELSE
+        fraction = 0.0
+    END IF
+    CALL ProgressBarSetFraction(realPb, fraction)
+END SUB
+
+FUNCTION NewGuiSlider(orientation AS INTEGER) AS GuiSlider
+    DIM realScale AS Scale
+    realScale = NewScale(orientation, 0.0, 100.0, 1.0)
+    DIM result AS GuiSlider
+    result.handle = realScale.handle
+    NewGuiSlider = result
+END FUNCTION
+
+SUB GuiSliderSetRange(s AS GuiSlider, min AS INTEGER, max AS INTEGER)
+    DIM realScale AS Scale
+    realScale.handle = s.handle
+    CALL ScaleSetRange(realScale, min, max)
+END SUB
+
+FUNCTION GuiSliderGetValue(s AS GuiSlider) AS INTEGER
+    DIM realScale AS Scale
+    realScale.handle = s.handle
+    GuiSliderGetValue = ScaleGetValue(realScale)
+END FUNCTION
+
+SUB GuiSliderSetValue(s AS GuiSlider, value AS INTEGER)
+    DIM realScale AS Scale
+    realScale.handle = s.handle
+    CALL ScaleSetValue(realScale, value)
+END SUB
+
+''' Reuses the same Round 4 trampoline already fixed to correctly
+''' deliver only `userData` - real GtkRange's own "value-changed"
+''' signal has the identical (instance, user_data) shape as
+''' "clicked"/"changed"/"toggled".
+SUB GuiSliderConnectValueChanged(s AS GuiSlider, handler AS ANY PTR, userData AS ANY PTR)
+    CALL eb_gui_gtk4_connect_userdata_signal(s.handle, "value-changed", handler, userData)
+END SUB

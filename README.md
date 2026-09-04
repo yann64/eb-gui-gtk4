@@ -369,6 +369,33 @@ buffer, same accepted precedent as `eb-gui-qt6`'s own `GuiButtonGetText`
 - real `gtk_combo_box_text_get_active_text` returns a freshly
 allocated string and the contract has no matching free function.
 
+## Widgets (Round 5) - ProgressBar, Slider
+
+```basic
+DIM pb AS GuiProgressBar
+pb = NewGuiProgressBar()
+CALL GuiProgressBarSetRange(pb, 0, 200)
+CALL GuiProgressBarSetValue(pb, 150)
+
+DIM slider AS GuiSlider
+slider = NewGuiSlider(0)   ' 0 = horizontal
+CALL GuiSliderSetRange(slider, 0, 200)
+CALL GuiSliderSetValue(slider, 150)
+```
+
+Real GTK4's `GtkProgressBar` (`eb-gtk4` v0.14.0) has no integer
+min/max/value model at all - just a `0.0-1.0` double fraction. This
+adapter tracks each progress bar's own `(min, max, value)` in a small
+internal association table, computing the fraction for display
+(`gtk_progress_bar_set_fraction`) and returning the tracked integer
+directly for `GetValue` - never re-deriving it from the lossy
+fraction. `GuiSlider` wraps `Scale` (a real `GtkRange`) directly, real
+integer values throughout. `GuiSliderConnectValueChanged` reuses the
+Round 4 `eb_gui_gtk4_connect_userdata_signal` trampoline on
+`GtkRange`'s own `"value-changed"` signal - already correctly fixed to
+deliver only `userData`, verified again by this round's own regression
+check.
+
 ## Verifying
 
 - `examples/hello_window` - a plain window appears, title set through
@@ -403,9 +430,13 @@ allocated string and the contract has no matching free function.
   `GuiWidgetSetMinSize`/`SetMaxSize` (Round 3) run without crashing;
   `GuiButtonConnectClicked`'s own `userData` delivery is asserted
   correct against a known marker address (the regression check for the
-  real bug fixed this round - see above); and `GuiCheckBoxConnectToggled`/
+  real bug fixed this round - see above); `GuiCheckBoxConnectToggled`/
   `GuiRadioButtonSetGroup`/`GuiComboBoxConnectChanged` (Round 4) all
-  round-trip/fire correctly via `g_signal_emit_by_name`.
+  round-trip/fire correctly via `g_signal_emit_by_name`; and
+  `GuiProgressBarSetRange`/`SetValue`/`GetValue` and
+  `GuiSliderSetRange`/`SetValue`/`GetValue`/`ConnectValueChanged`
+  (Round 5) round-trip correctly, including a second `userData`
+  delivery regression check on the reused trampoline.
 - `examples/widgets_form` - a `GuiBox` containing a `GuiLabel` +
   `GuiEntry` + `GuiButton`, clicking the button reads the entry and
   updates the label (confirmed launches and runs without crashing on

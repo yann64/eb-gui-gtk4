@@ -3,9 +3,9 @@
 [[package]]
 name = "gtk4"
 path = "/home/yann64/.ebpm/cache/git/https___github.com_yann64_eb-gtk4.git"
-commit = "4675d7213f5217cecd9559969e27408bf9fd36a9"
+commit = "8aa467a8390e719871318996cfaf8b17456cb73b"
 
 [[package]]
 name = "gui"
 path = "/home/yann64/.ebpm/cache/git/https___github.com_yann64_eb-gui.git"
-commit = "e507c23c3d357a7f7c3488e979203c0198a31c21"
+commit = "d47b43f519916f2f1171fc8d2642d62a790253be"
