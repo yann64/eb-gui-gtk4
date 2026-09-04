@@ -1,0 +1,10 @@
+[package]
+name = "hello_window"
+version = "0.1.0"
+
+[bin]
+name = "hello_window"
+path = "src/main.bas"
+
+[dependencies]
+gui-gtk4 = { path = "../.." }

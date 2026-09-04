@@ -1,0 +1,10 @@
+[package]
+name = "gui-gtk4"
+version = "0.1.0"
+
+[lib]
+path = "src/lib.bas"
+
+[dependencies]
+gui = { git = "https://github.com/yann64/eb-gui.git" }
+gtk4 = { git = "https://github.com/yann64/eb-gtk4.git" }
