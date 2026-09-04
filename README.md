@@ -6,23 +6,28 @@ cross-toolkit `Application`/`Window` API, managed with `ebpm`.
 
 ## Status
 
-Phase 1: `Application`/`Window` only, implementing every function in
-`eb-gui`'s own contract by calling into
-[`eb-gtk4`](https://github.com/yann64/eb-gtk4). One piece of native code
-(`native/shim_closecallback.h`/`.cpp`) - see "Why this package needs a
-tiny native shim" below.
+Phase 1 (`Application`/`Window`) plus the `StatusBar`/`Timer` half of
+Phase 2, implementing every function in `eb-gui`'s own contract by
+calling into [`eb-gtk4`](https://github.com/yann64/eb-gtk4). One piece
+of native code (`native/shim_closecallback.h`/`.cpp`) - see "Why this
+package needs a tiny native shim" below. `GuiTimer` maps onto
+`eb-gtk4`'s own `GtkTimer` (itself backed by a small native shim in
+that package - see `eb-gtk4`'s own README); `GuiTimerDestroy` is
+meaningful here (unlike on Qt6), since `GtkTimer` isn't a GObject and
+needs its own explicit free.
 
 ## Building
 
 ```sh
 cmake -S native -B native/build
 cmake --build native/build
-EBASIC_LIBRARY_PATH=$(pwd)/native/build ebpm build
+EBASIC_LIBRARY_PATH=$(pwd)/native/build:$(pwd)/../eb-gtk4/native/build ebpm build
 ```
 
 `EBASIC_LIBRARY_PATH` (not `LIBRARY_PATH` - see `ebpm`'s own docs for
 why) tells `ebc`/`ebpm` where to find the just-built
-`libebguigtk4.a` - this package's manifest has no field for a real,
+`libebguigtk4.a` **and** `eb-gtk4`'s own `libebgtk4shim.a` (needed for
+`GtkTimer`) - this package's manifest has no field for a real,
 external native library's own directory, the same gap `eb-qt6`/
 `eb-haiku` document for their own native shims.
 
@@ -78,8 +83,18 @@ problem.
 Every window is created via `gtk_application_window_new`, so real
 GTK4's own `GApplication` window tracking makes `GuiApplicationRun`
 return once the last one closes, with no extra bookkeeping needed in
-this adapter at all (contrast `eb-gui-qt6`, which has to track its own
-live-window count since Qt's `QApplication` doesn't do this natively).
+this adapter at all. `eb-gui-qt6` needs none either, as it turns out -
+see that package's own README for a real, confirmed-not-assumed
+correction to this project's original plan (Qt's own
+`quitOnLastWindowClosed` already handles it).
+
+**Also confirmed real and worth knowing**: on Qt6,
+`GuiApplicationQuit` implicitly tries to close every currently-shown
+window first, so a permanently-vetoing `GuiWindowSetCloseCallback` on a
+shown window can silently block it too. GTK4 has no such negotiation -
+`GuiApplicationQuit` here always stops unconditionally regardless of
+any window's close callback (see `eb-gui-qt6`'s own README for the
+full detail and the bug this caused there).
 
 ## Using as a dependency
 
@@ -104,6 +119,26 @@ CALL GuiWindowShow(win)
 CALL GuiApplicationRun(app)
 ```
 
+`GuiStatusBar`/`GuiTimer`:
+
+```basic
+DIM sb AS GuiStatusBar
+sb = GuiWindowStatusBar(win)   ' auto-created, one per window
+CALL GuiStatusBarShowMessage(sb, "Ready")
+CALL GuiStatusBarClear(sb)
+
+DIM t AS GuiTimer
+t = NewGuiTimer(win)   ' parent required for the Qt6 adapter; ignored here
+CALL GuiTimerSetInterval(t, 1000)
+CALL GuiTimerSetSingleShot(t, 0)
+
+SUB OnTick(userData AS ANY PTR)
+    PRINT "tick"
+END SUB
+CALL GuiTimerConnectTimeout(t, @OnTick, 0)
+CALL GuiTimerStart(t)
+```
+
 ## Verifying
 
 - `examples/hello_window` - a plain window appears, title set through
@@ -115,7 +150,14 @@ CALL GuiApplicationRun(app)
   `GuiWindowSetCloseCallback` all connected without crashing (the
   underlying close-callback veto/allow/no-callback behavior is already
   directly verified at the `eb-gtk4` layer, `window_lifecycle_verify.bas`);
-  `GuiApplicationQuit` stopped `GuiApplicationRun` promptly, no hang.
+  `GuiStatusBar` show/clear didn't crash (real `GtkStatusbar` rendering
+  is already screenshot-verified at the `eb-gtk4` layer,
+  `examples/statusbar_timer`); and `GuiTimer` driving a real,
+  running-loop `GuiApplicationQuit` (a single-shot timer's own callback
+  calls it) - the program exiting promptly rather than hanging proves
+  the interval/single-shot/callback-dispatch and quit all genuinely
+  work together, a more realistic shape than an earlier quit-before-run
+  ordering this same example used before `GuiTimer` existed.
 
 ## See also
 

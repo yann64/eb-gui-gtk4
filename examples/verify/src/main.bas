@@ -12,6 +12,11 @@ FUNCTION OnVetoClose(userData AS ANY PTR) AS INTEGER
 END FUNCTION
 
 DIM app AS GuiApplication
+
+SUB OnTimeout(userData AS ANY PTR)
+    PRINT "timer fired - quitting"
+    CALL GuiApplicationQuit(app)
+END SUB
 app = NewGuiApplication("io.github.yann64.eb-gui-gtk4.verify")
 
 ' 1. Enable/disable round trip.
@@ -46,8 +51,34 @@ CALL GuiWindowSetCloseCallback(vetoWin, @OnVetoClose, 0)
 CALL GuiWindowShow(vetoWin)
 PRINT "close callback connected without crashing"
 
-' 4. GuiApplicationQuit stops GuiApplicationRun promptly.
-PRINT "calling GuiApplicationQuit..."
-CALL GuiApplicationQuit(app)
+' 4. StatusBar - real GtkStatusbar has no message getter, so "did not
+' crash" (plus the dedicated statusbar_timer example's own live
+' screenshot, in eb-gtk4 itself) is the bar here.
+DIM sbWin AS GuiWindow
+sbWin = NewGuiWindow(app, "statusbar", 200, 100)
+DIM sb AS GuiStatusBar
+sb = GuiWindowStatusBar(sbWin)
+CALL GuiStatusBarShowMessage(sb, "hello")
+CALL GuiStatusBarClear(sb)
+PRINT "status bar show/clear did not crash"
+
+' 5. GuiTimer, and (via its own callback) GuiApplicationQuit stopping
+' GuiApplicationRun - a more realistic shape than calling Quit before
+' Run even starts (which this backend tolerates with a noisy assertion,
+' see eb-gui-qt6's own README for why that ordering hangs there
+' instead): if this program exits promptly rather than hanging, the
+' timer's interval/single-shot/callback-dispatch and GuiApplicationQuit
+' all genuinely work together.
+DIM t AS GuiTimer
+t = NewGuiTimer(win)
+CALL GuiTimerSetInterval(t, 200)
+CALL GuiTimerSetSingleShot(t, 1)
+PRINT "timer active before start: ", GuiTimerIsActive(t)
+
+CALL GuiTimerConnectTimeout(t, @OnTimeout, 0)
+CALL GuiTimerStart(t)
+PRINT "timer active after start: ", GuiTimerIsActive(t)
+
 CALL GuiApplicationRun(app)
-PRINT "GuiApplicationRun returned - quit worked"
+PRINT "GuiApplicationRun returned - timer-driven quit worked"
+CALL GuiTimerDestroy(t)

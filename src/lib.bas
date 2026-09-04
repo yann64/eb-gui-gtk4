@@ -148,3 +148,90 @@ SUB GuiWindowDestroy(win AS GuiWindow)
     realWin.handle = win.handle
     CALL WindowDestroy(realWin)
 END SUB
+
+''' Real GtkStatusbar is auto-created and owned by no particular
+''' window - this adapter creates one and packs it as the window's own
+''' child the first time it's requested, matching GuiWindowStatusBar's
+''' "auto-created, one per window" contract. Only works if the window's
+''' child hasn't already been set to something else (WindowSetChild
+''' replaces it) - a real limitation of this backend (GTK4's window has
+''' exactly one direct child), not a defect in this adapter; an
+''' application that also wants other content should wrap it and the
+''' status bar together in its own Box before this is ever called.
+FUNCTION GuiWindowStatusBar(win AS GuiWindow) AS GuiStatusBar
+    DIM realWin AS Window
+    realWin.handle = win.handle
+    DIM sb AS StatusBar
+    sb = NewStatusBar()
+    CALL WindowSetChild(realWin, sb)
+    DIM result AS GuiStatusBar
+    result.handle = sb.handle
+    GuiWindowStatusBar = result
+END FUNCTION
+
+SUB GuiStatusBarShowMessage(sb AS GuiStatusBar, text AS ZSTRING)
+    DIM realSb AS StatusBar
+    realSb.handle = sb.handle
+    CALL StatusBarShowMessage(realSb, text)
+END SUB
+
+SUB GuiStatusBarClear(sb AS GuiStatusBar)
+    DIM realSb AS StatusBar
+    realSb.handle = sb.handle
+    CALL StatusBarClear(realSb)
+END SUB
+
+''' `parent` is accepted (for signature parity with the Qt6 adapter,
+''' where it's required) but ignored - this backend's own GtkTimer
+''' isn't a GObject at all and has no parent/ownership concept.
+FUNCTION NewGuiTimer(parent AS GuiWindow) AS GuiTimer
+    DIM t AS GtkTimer
+    t = NewGtkTimer()
+    DIM result AS GuiTimer
+    result.handle = t.handle
+    NewGuiTimer = result
+END FUNCTION
+
+SUB GuiTimerSetInterval(t AS GuiTimer, milliseconds AS INTEGER)
+    DIM realT AS GtkTimer
+    realT.handle = t.handle
+    CALL GtkTimerSetInterval(realT, milliseconds)
+END SUB
+
+SUB GuiTimerSetSingleShot(t AS GuiTimer, singleShot AS INTEGER)
+    DIM realT AS GtkTimer
+    realT.handle = t.handle
+    CALL GtkTimerSetSingleShot(realT, singleShot)
+END SUB
+
+SUB GuiTimerConnectTimeout(t AS GuiTimer, handler AS ANY PTR, userData AS ANY PTR)
+    DIM realT AS GtkTimer
+    realT.handle = t.handle
+    CALL GtkTimerConnectTimeout(realT, handler, userData)
+END SUB
+
+SUB GuiTimerStart(t AS GuiTimer)
+    DIM realT AS GtkTimer
+    realT.handle = t.handle
+    CALL GtkTimerStart(realT)
+END SUB
+
+SUB GuiTimerStop(t AS GuiTimer)
+    DIM realT AS GtkTimer
+    realT.handle = t.handle
+    CALL GtkTimerStop(realT)
+END SUB
+
+FUNCTION GuiTimerIsActive(t AS GuiTimer) AS INTEGER
+    DIM realT AS GtkTimer
+    realT.handle = t.handle
+    GuiTimerIsActive = GtkTimerIsActive(realT)
+END FUNCTION
+
+''' Meaningful on this backend - frees the timer's own plain heap
+''' allocation (not a GObject, so nothing else would free it).
+SUB GuiTimerDestroy(t AS GuiTimer)
+    DIM realT AS GtkTimer
+    realT.handle = t.handle
+    CALL GtkTimerDestroy(realT)
+END SUB
