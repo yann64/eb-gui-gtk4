@@ -6,6 +6,11 @@ cross-toolkit `Application`/`Window` API, managed with `ebpm`.
 
 ## Status
 
+**Confirmed running on Haiku, unmodified** (2026-09-04) - real
+HaikuPorts `gtk4`, this package's own native shim, and `examples/verify`
+all work with zero source changes; see `eb-gtk4`'s own README for the
+platform detail (Haiku's GTK4 port uses its own native GDK backend).
+
 Phase 1 (`Application`/`Window`) plus all of Phase 2
 (`StatusBar`/`Timer`/`Menu`/`Toolbar`/`Action`), implementing every
 function in `eb-gui`'s own contract by calling into
