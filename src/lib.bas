@@ -525,6 +525,61 @@ SUB GuiGridAttach(gr AS GuiGrid, child AS ANY PTR, column AS INTEGER, row AS INT
     CALL GridAttach(realGrid, childWidget, column, row, columnSpan, rowSpan)
 END SUB
 
+''' Maps the contract's toolkit-neutral GUI_ALIGN_* to real GTK4's own
+''' GTK_ALIGN_* values - NOT the same numbering (GUI_ALIGN_CENTER=2/
+''' GUI_ALIGN_END=3 vs. real GTK_ALIGN_END=2/GTK_ALIGN_CENTER=3).
+FUNCTION EbGuiGtk4MapAlign(guiAlign AS INTEGER) AS INTEGER
+    IF guiAlign = GUI_ALIGN_START THEN
+        EbGuiGtk4MapAlign = GTK_ALIGN_START
+    ELSEIF guiAlign = GUI_ALIGN_CENTER THEN
+        EbGuiGtk4MapAlign = GTK_ALIGN_CENTER
+    ELSEIF guiAlign = GUI_ALIGN_END THEN
+        EbGuiGtk4MapAlign = GTK_ALIGN_END
+    ELSE
+        EbGuiGtk4MapAlign = GTK_ALIGN_FILL
+    END IF
+END FUNCTION
+
+''' GTK4 puts expand/alignment on the CHILD widget itself, not the
+''' Box - set them, then append exactly like GuiBoxAddChild. `expand`
+''' is applied along BOTH axes (hexpand and vexpand) since the
+''' contract doesn't know the box's own orientation at this call site;
+''' the cross-axis expand is harmless (a Box only actually stretches
+''' children along its own main axis regardless of the child's own
+''' vexpand/hexpand on the other axis).
+SUB GuiBoxAddChildEx(bx AS GuiBox, child AS ANY PTR, expand AS SINGLE, halign AS INTEGER, valign AS INTEGER)
+    DIM childWidget AS Widget
+    childWidget.handle = child
+    DIM doExpand AS INTEGER
+    doExpand = 0
+    IF expand <> 0 THEN
+        doExpand = 1
+    END IF
+    CALL WidgetSetHExpand(childWidget, doExpand)
+    CALL WidgetSetVExpand(childWidget, doExpand)
+    CALL WidgetSetHAlign(childWidget, EbGuiGtk4MapAlign(halign))
+    CALL WidgetSetVAlign(childWidget, EbGuiGtk4MapAlign(valign))
+    CALL GuiBoxAddChild(bx, child)
+END SUB
+
+SUB GuiGridAttachEx(gr AS GuiGrid, child AS ANY PTR, column AS INTEGER, row AS INTEGER, columnSpan AS INTEGER, rowSpan AS INTEGER, halign AS INTEGER, valign AS INTEGER)
+    DIM childWidget AS Widget
+    childWidget.handle = child
+    CALL WidgetSetHAlign(childWidget, EbGuiGtk4MapAlign(halign))
+    CALL WidgetSetVAlign(childWidget, EbGuiGtk4MapAlign(valign))
+    CALL GuiGridAttach(gr, child, column, row, columnSpan, rowSpan)
+END SUB
+
+''' GtkGrid has no per-column/row weight concept in real GTK4 at all -
+''' a real absence upstream, not a binding gap - so this is a
+''' documented, accepted no-op on this backend (see eb-gui's own
+''' README).
+SUB GuiGridSetColumnWeight(gr AS GuiGrid, column AS INTEGER, weight AS SINGLE)
+END SUB
+
+SUB GuiGridSetRowWeight(gr AS GuiGrid, row AS INTEGER, weight AS SINGLE)
+END SUB
+
 ''' Appends `content` into the window's existing `WindowContentBox` -
 ''' call after `GuiWindowMenuBar`/`GuiWindowToolBar` and before
 ''' `GuiWindowStatusBar` for the expected top-to-bottom visual order

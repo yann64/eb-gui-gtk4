@@ -247,6 +247,29 @@ CALL GuiBoxAddChild(box, btn.handle)
 CALL GuiWindowSetContent(win, box.handle)
 ```
 
+Round 2 constraints (expand/align/weight):
+
+```basic
+DIM growBtn AS GuiButton
+growBtn = NewGuiButton("Grows")
+CALL GuiBoxAddChildEx(box, growBtn.handle, 1.0, GUI_ALIGN_FILL, GUI_ALIGN_CENTER)
+
+DIM fixedBtn AS GuiButton
+fixedBtn = NewGuiButton("Fixed")
+CALL GuiBoxAddChildEx(box, fixedBtn.handle, 0.0, GUI_ALIGN_END, GUI_ALIGN_START)
+```
+
+GTK4 puts expand/alignment on the CHILD widget itself, not the Box -
+`GuiBoxAddChildEx`/`GuiGridAttachEx` call the new `WidgetSetHExpand`/
+`VExpand`/`HAlign`/`VAlign` (`eb-gtk4` v0.12.0+) on `child` before
+appending/attaching it, exactly as if you'd called them yourself first.
+`expand` is boolean here (zero vs. nonzero) - real GTK4 has no
+fractional-ratio expand between multiple expanding siblings, unlike
+Qt6's stretch factor or Haiku's item weight (accepted, documented
+loss - see `eb-gui`'s own README). `GuiGridSetColumnWeight`/
+`SetRowWeight` are a documented no-op here - `GtkGrid` has no
+per-column/row weight concept in real GTK4 at all.
+
 ## Verifying
 
 - `examples/hello_window` - a plain window appears, title set through
@@ -273,8 +296,11 @@ CALL GuiWindowSetContent(win, box.handle)
   menu bar/tool bar/status bar all compose correctly on the same
   window regardless of call order (shared `WindowContentBox`);
   `GuiEntrySetText`/`GetText` round-trip correctly through a `GuiGrid`
-  nested inside a `GuiBox`; and `GuiWindowSetContent` composes with
-  StatusBar/MenuBar/ToolBar on the same window without crashing.
+  nested inside a `GuiBox`; `GuiWindowSetContent` composes with
+  StatusBar/MenuBar/ToolBar on the same window without crashing; and
+  `GuiBoxAddChildEx`/`GuiGridAttachEx`/`GuiGridSetColumnWeight`/
+  `SetRowWeight` (Round 2 constraints) run without crashing, including
+  a `GuiGrid` nested inside a constrained `GuiBox` child.
 - `examples/widgets_form` - a `GuiBox` containing a `GuiLabel` +
   `GuiEntry` + `GuiButton`, clicking the button reads the entry and
   updates the label (confirmed launches and runs without crashing on

@@ -141,6 +141,30 @@ CALL GuiBoxAddChild(widgetsBox, goBtn.handle)
 CALL GuiWindowSetContent(sbWin, widgetsBox.handle)
 PRINT "GuiWindowSetContent composed with StatusBar/MenuBar/ToolBar without crashing"
 
+' 6. Round 2: per-child constraints - expand/align/weight. GTK4's
+' expand/align effect isn't introspectable headlessly (it's a layout
+' allocation-time property, not a queryable widget state) - this
+' confirms the calls don't crash and compose with a nested Grid.
+DIM constraintsBox AS GuiBox
+constraintsBox = NewGuiBox(0, 4)
+DIM growBtn AS GuiButton
+growBtn = NewGuiButton("Grows")
+CALL GuiBoxAddChildEx(constraintsBox, growBtn.handle, 1.0, GUI_ALIGN_FILL, GUI_ALIGN_CENTER)
+DIM fixedBtn AS GuiButton
+fixedBtn = NewGuiButton("Fixed")
+CALL GuiBoxAddChildEx(constraintsBox, fixedBtn.handle, 0.0, GUI_ALIGN_END, GUI_ALIGN_START)
+
+DIM constraintsGrid AS GuiGrid
+constraintsGrid = NewGuiGrid()
+DIM gridLbl AS GuiLabel
+gridLbl = NewGuiLabel("Grid cell")
+CALL GuiGridAttachEx(constraintsGrid, gridLbl.handle, 0, 0, 1, 1, GUI_ALIGN_CENTER, GUI_ALIGN_CENTER)
+CALL GuiGridSetColumnWeight(constraintsGrid, 0, 1.0)   ' documented no-op on this backend
+CALL GuiGridSetRowWeight(constraintsGrid, 0, 1.0)      ' documented no-op on this backend
+CALL GuiBoxAddChild(constraintsBox, constraintsGrid.handle)
+CALL GuiBoxAddChild(widgetsBox, constraintsBox.handle)
+PRINT "Round 2 constraints (GuiBoxAddChildEx/GuiGridAttachEx/GuiGridSetColumnWeight/SetRowWeight) ran without crashing"
+
 ' 5. GuiTimer, and (via its own callback) GuiApplicationQuit stopping
 ' GuiApplicationRun - a more realistic shape than calling Quit before
 ' Run even starts (which this backend tolerates with a noisy assertion,
