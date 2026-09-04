@@ -34,6 +34,13 @@ Extern "C" Lib "ebguigtk4"
     ' 1-param eBasic handler binds its own param to instance, not
     ' user_data - confirmed by direct reproduction, not assumed).
     Declare Sub eb_gui_gtk4_connect_userdata_signal(ByVal obj AS ANY PTR, ByVal signalName AS ZSTRING, ByVal cb AS ANY PTR, ByVal userData AS ANY PTR)
+    ' Dedicated bridge for GtkListBox's own "row-selected" signal - its
+    ' real shape is (GtkListBox*, GtkListBoxRow*, gpointer), THREE real
+    ' arguments, not two, so the generic 2-arg trampoline above cannot
+    ' safely be reused (see shim_listboxselection.h's own top comment,
+    ' and this round's own standalone spike that verified it before this
+    ' declare was ever wired into GuiListBoxConnectSelectionChanged).
+    Declare Sub eb_gui_gtk4_listbox_connect_selection_changed(ByVal listBox AS ANY PTR, ByVal cb AS ANY PTR, ByVal userData AS ANY PTR)
 End Extern
 
 ''' Small per-adapter association table (handle -> handle) - makes up
@@ -830,4 +837,121 @@ END SUB
 ''' "clicked"/"changed"/"toggled".
 SUB GuiSliderConnectValueChanged(s AS GuiSlider, handler AS ANY PTR, userData AS ANY PTR)
     CALL eb_gui_gtk4_connect_userdata_signal(s.handle, "value-changed", handler, userData)
+END SUB
+
+FUNCTION NewGuiListBox() AS GuiListBox
+    DIM realBox AS ListBox
+    realBox = NewListBox()
+    DIM result AS GuiListBox
+    result.handle = realBox.handle
+    NewGuiListBox = result
+END FUNCTION
+
+''' Wraps `text` in a plain Label and appends it as a new row - real
+''' GtkListBox auto-wraps every appended widget in its own row.
+SUB GuiListBoxAddItem(lb AS GuiListBox, text AS ZSTRING)
+    DIM realBox AS ListBox
+    realBox.handle = lb.handle
+    DIM lbl AS Label
+    lbl = NewLabel(text)
+    CALL ListBoxAppend(realBox, lbl)
+END SUB
+
+''' Reads a row's own appended Label back via ListBoxRowGetChild - no
+''' internal item-tracking table needed, unlike GuiComboBox (real
+''' GtkComboBoxText's underlying item has no such getter).
+FUNCTION GuiListBoxGetItemText(lb AS GuiListBox, index AS INTEGER) AS ZSTRING
+    DIM realBox AS ListBox
+    realBox.handle = lb.handle
+    DIM row AS ListBoxRow
+    row = ListBoxGetRowAtIndex(realBox, index)
+    DIM child AS Widget
+    child = ListBoxRowGetChild(row)
+    DIM lbl AS Label
+    lbl.handle = child.handle
+    GuiListBoxGetItemText = LabelGetText(lbl)
+END FUNCTION
+
+FUNCTION GuiListBoxGetCount(lb AS GuiListBox) AS INTEGER
+    DIM realBox AS ListBox
+    realBox.handle = lb.handle
+    DIM count AS INTEGER
+    DIM row AS ListBoxRow
+    count = 0
+    row = ListBoxGetRowAtIndex(realBox, count)
+    DO WHILE row.handle <> 0
+        count = count + 1
+        row = ListBoxGetRowAtIndex(realBox, count)
+    LOOP
+    GuiListBoxGetCount = count
+END FUNCTION
+
+SUB GuiListBoxClear(lb AS GuiListBox)
+    DIM realBox AS ListBox
+    realBox.handle = lb.handle
+    CALL ListBoxRemoveAll(realBox)
+END SUB
+
+''' -1 if nothing selected - real GTK4 returns NULL from
+''' gtk_list_box_get_selected_row in that case.
+FUNCTION GuiListBoxGetSelectedIndex(lb AS GuiListBox) AS INTEGER
+    DIM realBox AS ListBox
+    realBox.handle = lb.handle
+    DIM row AS ListBoxRow
+    row = ListBoxGetSelectedRow(realBox)
+    IF row.handle = 0 THEN
+        GuiListBoxGetSelectedIndex = -1
+    ELSE
+        GuiListBoxGetSelectedIndex = ListBoxRowGetIndex(row)
+    END IF
+END FUNCTION
+
+SUB GuiListBoxSetSelectedIndex(lb AS GuiListBox, index AS INTEGER)
+    DIM realBox AS ListBox
+    realBox.handle = lb.handle
+    DIM row AS ListBoxRow
+    row = ListBoxGetRowAtIndex(realBox, index)
+    CALL ListBoxSelectRow(realBox, row)
+END SUB
+
+''' Uses the NEW dedicated 3-arg trampoline, not the generic Round 4
+''' one - see shim_listboxselection.h's own top comment for why.
+SUB GuiListBoxConnectSelectionChanged(lb AS GuiListBox, handler AS ANY PTR, userData AS ANY PTR)
+    CALL eb_gui_gtk4_listbox_connect_selection_changed(lb.handle, handler, userData)
+END SUB
+
+FUNCTION NewGuiTextView() AS GuiTextView
+    DIM realView AS TextView
+    realView = NewTextView()
+    DIM result AS GuiTextView
+    result.handle = realView.handle
+    NewGuiTextView = result
+END FUNCTION
+
+SUB GuiTextViewSetText(tv AS GuiTextView, text AS ZSTRING)
+    DIM realView AS TextView
+    realView.handle = tv.handle
+    DIM buf AS TextBuffer
+    buf = TextViewGetBuffer(realView)
+    CALL TextBufferSetText(buf, text)
+END SUB
+
+''' Real gtk_text_buffer_get_text returns a newly `g_malloc`'d string -
+''' same documented small per-call leak as GuiComboBoxGetSelectedText.
+FUNCTION GuiTextViewGetText(tv AS GuiTextView) AS ZSTRING
+    DIM realView AS TextView
+    realView.handle = tv.handle
+    DIM buf AS TextBuffer
+    buf = TextViewGetBuffer(realView)
+    DIM raw AS ANY PTR
+    raw = TextBufferGetText(buf)
+    DIM z AS ZSTRING
+    z = raw
+    GuiTextViewGetText = z
+END FUNCTION
+
+SUB GuiTextViewSetEditable(tv AS GuiTextView, editable AS INTEGER)
+    DIM realView AS TextView
+    realView.handle = tv.handle
+    CALL TextViewSetEditable(realView, editable)
 END SUB

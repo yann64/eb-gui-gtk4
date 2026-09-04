@@ -396,6 +396,73 @@ Round 4 `eb_gui_gtk4_connect_userdata_signal` trampoline on
 deliver only `userData`, verified again by this round's own regression
 check.
 
+## Widgets (Round 6) - ListBox, TextView
+
+```basic
+DIM lb AS GuiListBox
+lb = NewGuiListBox()
+CALL GuiListBoxAddItem(lb, "First")
+CALL GuiListBoxAddItem(lb, "Second")
+CALL GuiListBoxSetSelectedIndex(lb, 1)
+PRINT GuiListBoxGetSelectedIndex(lb)   ' 1
+PRINT GuiListBoxGetItemText(lb, 0)     ' First
+
+DIM tv AS GuiTextView
+tv = NewGuiTextView()
+CALL GuiTextViewSetText(tv, "hello")
+PRINT GuiTextViewGetText(tv)
+```
+
+`GuiListBox` wraps `eb-gtk4`'s own `ListBox`/`ListBoxRow` (v0.15.0),
+which this round extended with real selection primitives
+(`gtk_list_box_get_selected_row`/`select_row`) and a way to read a
+row's own appended child widget back
+(`gtk_list_box_row_get_child`). `GuiListBoxAddItem` wraps each item's
+text in a plain `Label` and appends it as a row; `GetItemText` reads
+that same `Label` back via `ListBoxRowGetChild` - **no internal
+item-tracking table needed**, unlike `GuiComboBox` (real
+`GtkComboBoxText`'s own underlying item type has no label getter at
+all).
+
+**A real ABI trap caught by this round's own research and a
+standalone spike, before it could become a second version of the
+Round 4 bug**: real GTK4's `"row-selected"` signal has the shape
+`(GtkListBox*, GtkListBoxRow*, gpointer)` - **three** real arguments,
+not two. The existing Round 4 generic trampoline
+(`eb_gui_gtk4_connect_userdata_signal`, used by `"clicked"`/
+`"changed"`/`"toggled"`/`"value-changed"`) is fixed at exactly two
+parameters (`GObject*, gpointer`) and would silently misdeliver the
+real `GtkListBoxRow*` in place of `userData` if reused here - the
+exact same failure class the Round 4 investigation found and fixed
+for `GuiButtonConnectClicked`. `GuiListBoxConnectSelectionChanged`
+instead uses a NEW, dedicated 3-parameter native trampoline
+(`shim_listboxselection.cpp`, mirroring `shim_actiontrigger.cpp`'s own
+technique for `GSimpleAction`'s real 3-arg `"activate"` signal) that
+discards the leading `GtkListBox*`/`GtkListBoxRow*` arguments before
+forwarding only `userData`. This was verified correct via a standalone
+spike (connecting a known marker address, selecting a row
+programmatically, and asserting the received pointer matched the
+marker - not the row, not the list box) *before* being wired into the
+permanent adapter code, and `examples/verify` carries the same
+regression check.
+
+`GuiTextView` wraps `eb-gtk4`'s already-generic `TextView`/`TextBuffer`
+directly (`NewTextView`+`TextViewGetBuffer`+`TextBufferSetText`/
+`GetText`+`TextViewSetEditable` - no new native work needed).
+`GuiTextViewGetText` leaks a small per-call buffer, the same
+documented tradeoff as `GuiComboBoxGetSelectedText` (real
+`gtk_text_buffer_get_text` returns a newly `g_malloc`'d string with no
+matching free function in the contract).
+
+`GuiTextView` deliberately has no `ConnectTextChanged` this round -
+see `eb-gui`'s own README for why (a Haiku prerequisite, not a GTK4
+limitation).
+
+`GuiScrollBar` was deliberately excluded this round - real GTK4's
+`GtkScrolledWindow` already auto-manages its own scrollbars for any
+child, making a standalone scrollbar binding low-value (see `eb-gui`'s
+own README for the full cross-backend reasoning).
+
 ## Verifying
 
 - `examples/hello_window` - a plain window appears, title set through
@@ -436,7 +503,14 @@ check.
   `GuiProgressBarSetRange`/`SetValue`/`GetValue` and
   `GuiSliderSetRange`/`SetValue`/`GetValue`/`ConnectValueChanged`
   (Round 5) round-trip correctly, including a second `userData`
-  delivery regression check on the reused trampoline.
+  delivery regression check on the reused trampoline; and
+  `GuiListBoxAddItem`/`GetItemText`/`GetCount`/`Clear`/
+  `GetSelectedIndex`/`SetSelectedIndex` and `GuiTextViewSetText`/
+  `GetText`/`SetEditable` (Round 6) round-trip correctly, including a
+  third `userData` delivery regression check on the NEW dedicated
+  3-arg `"row-selected"` trampoline (triggered via a genuine
+  `GuiListBoxSetSelectedIndex` call, not a faked signal emission, so
+  the real 3-argument signal shape is actually exercised).
 - `examples/widgets_form` - a `GuiBox` containing a `GuiLabel` +
   `GuiEntry` + `GuiButton`, clicking the button reads the entry and
   updates the label (confirmed launches and runs without crashing on

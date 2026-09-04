@@ -266,6 +266,47 @@ ELSE
 END IF
 PRINT "Round 5 widgets (ProgressBar/Slider) ran without crashing"
 
+' 10. Round 6: ListBox/TextView. GuiListBoxConnectSelectionChanged uses
+' a NEW dedicated 3-arg trampoline (not the generic Round 4 one) - this
+' re-confirms real userData delivery for it too, the same rigor that
+' caught the original Round 4 bug, via a genuine SetSelectedIndex call
+' (not a faked g_signal_emit_by_name) so the real "row-selected" signal
+' actually fires with its real 3-argument shape.
+DIM lb AS GuiListBox
+lb = NewGuiListBox()
+CALL GuiListBoxAddItem(lb, "First")
+CALL GuiListBoxAddItem(lb, "Second")
+PRINT "listbox count after 2 adds: ", GuiListBoxGetCount(lb)
+PRINT "listbox item 0 text: ", GuiListBoxGetItemText(lb, 0)
+PRINT "listbox item 1 text: ", GuiListBoxGetItemText(lb, 1)
+PRINT "listbox selected index before any selection (expect -1): ", GuiListBoxGetSelectedIndex(lb)
+
+DIM listBoxMarker AS INTEGER
+listBoxMarker = 98765
+DIM listBoxReceived AS ANY PTR
+SUB OnListBoxSelectionChanged(userData AS ANY PTR)
+    listBoxReceived = userData
+END SUB
+CALL GuiListBoxConnectSelectionChanged(lb, @OnListBoxSelectionChanged, @listBoxMarker)
+CALL GuiListBoxSetSelectedIndex(lb, 1)
+PRINT "listbox selected index after SetSelectedIndex(1): ", GuiListBoxGetSelectedIndex(lb)
+IF listBoxReceived = @listBoxMarker THEN
+    PRINT "GuiListBoxConnectSelectionChanged userData delivery: correct"
+ELSE
+    PRINT "GuiListBoxConnectSelectionChanged userData delivery: WRONG - regression!"
+END IF
+
+CALL GuiListBoxClear(lb)
+PRINT "listbox count after Clear: ", GuiListBoxGetCount(lb)
+
+DIM tv AS GuiTextView
+tv = NewGuiTextView()
+CALL GuiTextViewSetText(tv, "hello text view")
+PRINT "text view text round-trip: ", GuiTextViewGetText(tv)
+CALL GuiTextViewSetEditable(tv, 0)
+CALL GuiTextViewSetEditable(tv, 1)
+PRINT "Round 6 widgets (ListBox/TextView) ran without crashing"
+
 ' 5. GuiTimer, and (via its own callback) GuiApplicationQuit stopping
 ' GuiApplicationRun - a more realistic shape than calling Quit before
 ' Run even starts (which this backend tolerates with a noisy assertion,
