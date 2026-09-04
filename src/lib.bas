@@ -416,3 +416,126 @@ SUB EbGuiGtk4ToolbarButtonClicked(btn AS GObj PTR, userData AS ANY PTR)
     act.handle = userData
     CALL ActionActivate(act)
 END SUB
+
+FUNCTION NewGuiButton(text AS ZSTRING) AS GuiButton
+    DIM realBtn AS Button
+    realBtn = NewButton(text)
+    DIM result AS GuiButton
+    result.handle = realBtn.handle
+    NewGuiButton = result
+END FUNCTION
+
+SUB GuiButtonSetText(b AS GuiButton, text AS ZSTRING)
+    DIM realBtn AS Button
+    realBtn.handle = b.handle
+    CALL ButtonSetLabel(realBtn, text)
+END SUB
+
+FUNCTION GuiButtonGetText(b AS GuiButton) AS ZSTRING
+    DIM realBtn AS Button
+    realBtn.handle = b.handle
+    GuiButtonGetText = ButtonGetLabel(realBtn)
+END FUNCTION
+
+SUB GuiButtonConnectClicked(b AS GuiButton, handler AS ANY PTR, userData AS ANY PTR)
+    DIM realBtn AS Button
+    realBtn.handle = b.handle
+    CALL ObjConnect(realBtn, "clicked", handler, userData)
+END SUB
+
+FUNCTION NewGuiLabel(text AS ZSTRING) AS GuiLabel
+    DIM realLbl AS Label
+    realLbl = NewLabel(text)
+    DIM result AS GuiLabel
+    result.handle = realLbl.handle
+    NewGuiLabel = result
+END FUNCTION
+
+SUB GuiLabelSetText(l AS GuiLabel, text AS ZSTRING)
+    DIM realLbl AS Label
+    realLbl.handle = l.handle
+    CALL LabelSetText(realLbl, text)
+END SUB
+
+FUNCTION NewGuiEntry(text AS ZSTRING) AS GuiEntry
+    DIM realEntry AS Entry
+    realEntry = NewEntry()
+    CALL EntrySetText(realEntry, text)
+    DIM result AS GuiEntry
+    result.handle = realEntry.handle
+    NewGuiEntry = result
+END FUNCTION
+
+SUB GuiEntrySetText(e AS GuiEntry, text AS ZSTRING)
+    DIM realEntry AS Entry
+    realEntry.handle = e.handle
+    CALL EntrySetText(realEntry, text)
+END SUB
+
+FUNCTION GuiEntryGetText(e AS GuiEntry) AS ZSTRING
+    DIM realEntry AS Entry
+    realEntry.handle = e.handle
+    GuiEntryGetText = EntryGetText(realEntry)
+END FUNCTION
+
+''' Real GtkEditable (which Entry implements) emits a real "changed"
+''' signal on every text modification - a direct ObjConnect pass-through.
+SUB GuiEntryConnectChanged(e AS GuiEntry, handler AS ANY PTR, userData AS ANY PTR)
+    DIM realEntry AS Entry
+    realEntry.handle = e.handle
+    CALL ObjConnect(realEntry, "changed", handler, userData)
+END SUB
+
+''' `orientation` (0=horizontal, 1=vertical) matches GTK4's own
+''' GTK_ORIENTATION_HORIZONTAL/VERTICAL values exactly - passed straight
+''' through, no translation needed.
+FUNCTION NewGuiBox(orientation AS INTEGER, spacing AS INTEGER) AS GuiBox
+    DIM realBox AS Box
+    realBox = NewBox(orientation, spacing)
+    DIM result AS GuiBox
+    result.handle = realBox.handle
+    NewGuiBox = result
+END FUNCTION
+
+''' A real GTK4 `Box`/`Grid` is itself a `Widget`, so `child` may be any
+''' other `Gui*` TYPE's own handle - including another `GuiBox`/
+''' `GuiGrid`, which nest directly with no holder widget needed (unlike
+''' `eb-gui-qt6`/`eb-gui-haiku` - see `eb-gui`'s own README).
+SUB GuiBoxAddChild(bx AS GuiBox, child AS ANY PTR)
+    DIM realBox AS Box
+    realBox.handle = bx.handle
+    DIM childWidget AS Widget
+    childWidget.handle = child
+    CALL BoxAppend(realBox, childWidget)
+END SUB
+
+FUNCTION NewGuiGrid() AS GuiGrid
+    DIM realGrid AS Grid
+    realGrid = NewGrid()
+    DIM result AS GuiGrid
+    result.handle = realGrid.handle
+    NewGuiGrid = result
+END FUNCTION
+
+SUB GuiGridAttach(gr AS GuiGrid, child AS ANY PTR, column AS INTEGER, row AS INTEGER, columnSpan AS INTEGER, rowSpan AS INTEGER)
+    DIM realGrid AS Grid
+    realGrid.handle = gr.handle
+    DIM childWidget AS Widget
+    childWidget.handle = child
+    CALL GridAttach(realGrid, childWidget, column, row, columnSpan, rowSpan)
+END SUB
+
+''' Appends `content` into the window's existing `WindowContentBox` -
+''' call after `GuiWindowMenuBar`/`GuiWindowToolBar` and before
+''' `GuiWindowStatusBar` for the expected top-to-bottom visual order
+''' (unenforced convention, matching this package's own existing
+''' Menu/ToolBar/StatusBar ordering precedent).
+SUB GuiWindowSetContent(win AS GuiWindow, content AS ANY PTR)
+    DIM realWin AS Window
+    realWin.handle = win.handle
+    DIM contentBox AS Box
+    contentBox = WindowContentBox(realWin)
+    DIM childWidget AS Widget
+    childWidget.handle = content
+    CALL BoxAppend(contentBox, childWidget)
+END SUB

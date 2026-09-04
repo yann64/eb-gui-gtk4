@@ -1,0 +1,10 @@
+[package]
+name = "widgets_form"
+version = "0.1.0"
+
+[bin]
+name = "widgets_form"
+path = "src/main.bas"
+
+[dependencies]
+gui-gtk4 = { path = "../.." }

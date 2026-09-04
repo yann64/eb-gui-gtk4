@@ -17,6 +17,12 @@ SUB OnActionTriggered(userData AS ANY PTR)
     triggerCount = triggerCount + 1
 END SUB
 
+DIM clickCount AS INTEGER
+
+SUB OnWidgetButtonClicked(userData AS ANY PTR)
+    clickCount = clickCount + 1
+END SUB
+
 DIM app AS GuiApplication
 
 SUB OnTimeout(userData AS ANY PTR)
@@ -99,6 +105,41 @@ toolAction = GuiToolBarAddAction(tbar1, "Go")
 CALL GuiActionConnectTriggered(toolAction, @OnActionTriggered, 0)
 CALL GuiActionTrigger(toolAction)
 PRINT "after toolbar action trigger: ", triggerCount
+
+' 6. Widget/Layout Round 1 - GuiBox/GuiGrid nesting, GuiEntry text
+' round-trip, and GuiWindowSetContent composing correctly with
+' StatusBar (already on sbWin from section 4). GuiButtonConnectClicked
+' itself is only confirmed "connects without crashing" here - real
+' GTK4 has no programmatic "invoke this click" primitive for a plain
+' GtkButton the way BInvoker::Invoke()/g_action_activate() do for
+' Haiku/GTK4 actions (GTK4 removed the old gtk_button_clicked()), and
+' real interactive clicking isn't reliably driveable headlessly either
+' (the same well-established limitation this whole project already
+' works around for menu items via ActionActivate, which a plain button
+' has no equivalent of).
+DIM widgetsBox AS GuiBox
+widgetsBox = NewGuiBox(1, 4)
+
+DIM formGrid AS GuiGrid
+formGrid = NewGuiGrid()
+DIM nameLbl AS GuiLabel
+nameLbl = NewGuiLabel("Name:")
+CALL GuiGridAttach(formGrid, nameLbl.handle, 0, 0, 1, 1)
+DIM nameEntry AS GuiEntry
+nameEntry = NewGuiEntry("")
+CALL GuiGridAttach(formGrid, nameEntry.handle, 1, 0, 1, 1)
+CALL GuiBoxAddChild(widgetsBox, formGrid.handle)
+
+CALL GuiEntrySetText(nameEntry, "hello")
+PRINT "entry text round-trip: ", GuiEntryGetText(nameEntry)
+
+DIM goBtn AS GuiButton
+goBtn = NewGuiButton("Go")
+CALL GuiButtonConnectClicked(goBtn, @OnWidgetButtonClicked, 0)
+CALL GuiBoxAddChild(widgetsBox, goBtn.handle)
+
+CALL GuiWindowSetContent(sbWin, widgetsBox.handle)
+PRINT "GuiWindowSetContent composed with StatusBar/MenuBar/ToolBar without crashing"
 
 ' 5. GuiTimer, and (via its own callback) GuiApplicationQuit stopping
 ' GuiApplicationRun - a more realistic shape than calling Quit before

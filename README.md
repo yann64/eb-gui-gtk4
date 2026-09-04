@@ -12,8 +12,9 @@ all work with zero source changes; see `eb-gtk4`'s own README for the
 platform detail (Haiku's GTK4 port uses its own native GDK backend).
 
 Phase 1 (`Application`/`Window`) plus all of Phase 2
-(`StatusBar`/`Timer`/`Menu`/`Toolbar`/`Action`), implementing every
-function in `eb-gui`'s own contract by calling into
+(`StatusBar`/`Timer`/`Menu`/`Toolbar`/`Action`), plus Widget/Layout
+Round 1 (`GuiButton`/`GuiLabel`/`GuiEntry` + `GuiBox`/`GuiGrid`),
+implementing every function in `eb-gui`'s own contract by calling into
 [`eb-gtk4`](https://github.com/yann64/eb-gtk4). Two pieces of native
 code (`native/shim_closecallback.h`/`.cpp`,
 `native/shim_actiontrigger.h`/`.cpp`) - see "Why this package needs a
@@ -22,6 +23,19 @@ tiny native shim" below. `GuiTimer` maps onto `eb-gtk4`'s own
 `eb-gtk4`'s own README); `GuiTimerDestroy` is meaningful here (unlike
 on Qt6), since `GtkTimer` isn't a GObject and needs its own explicit
 free.
+
+`GuiBox`/`GuiGrid` are the simplest of the three adapters to implement:
+real GTK4 `Box`/`Grid` are themselves `Widget`s, so `GuiBox.handle`/
+`GuiGrid.handle` ARE the real widget handles directly - no holder
+widget needed the way `eb-gui-qt6`/`eb-gui-haiku` each require (see
+`eb-gui`'s own README on this asymmetry). `GuiButtonConnectClicked`
+has no programmatic "invoke this click" counterpart - real GTK4 has no
+`gtk_button_clicked()` any more (removed upstream) and no generic
+activate-by-action-name path for a plain button the way menu
+actions/toolbar buttons get via `Action`/`ActionActivate` - `examples/
+verify` only confirms connecting doesn't crash for this one function,
+the same "real interactive input isn't headlessly driveable" limit
+already documented elsewhere in this ecosystem.
 
 `GuiMenuAddAction`/`GuiToolBarAddAction` paper over a real capability
 mismatch: real GTK4 actions (`GSimpleAction`) are shareable,
@@ -205,6 +219,34 @@ goAction = GuiToolBarAddAction(tb, "Go")
 CALL GuiActionConnectTriggered(goAction, @OnOpen, 0)
 ```
 
+`GuiBox`/`GuiGrid`/widgets:
+
+```basic
+DIM box AS GuiBox
+box = NewGuiBox(1, 8)   ' 1 = vertical
+
+DIM lbl AS GuiLabel
+lbl = NewGuiLabel("Type something, then click Go")
+CALL GuiBoxAddChild(box, lbl.handle)
+
+DIM entry AS GuiEntry
+entry = NewGuiEntry("")
+CALL GuiBoxAddChild(box, entry.handle)
+
+SUB OnGo(userData AS ANY PTR)
+    DIM e AS GuiEntry
+    e.handle = userData
+    PRINT GuiEntryGetText(e)
+END SUB
+
+DIM btn AS GuiButton
+btn = NewGuiButton("Go")
+CALL GuiButtonConnectClicked(btn, @OnGo, entry.handle)
+CALL GuiBoxAddChild(box, btn.handle)
+
+CALL GuiWindowSetContent(win, box.handle)
+```
+
 ## Verifying
 
 - `examples/hello_window` - a plain window appears, title set through
@@ -227,9 +269,19 @@ CALL GuiActionConnectTriggered(goAction, @OnOpen, 0)
   `GuiWindowMenuBar`/`GuiWindowToolBar` return the identical handle on
   repeated calls; `GuiActionTrigger` genuinely reaches a connected
   `GuiActionConnectTriggered` handler for both a menu action and a tool
-  bar action; `GuiActionSetEnabled` round-trips without crashing; and
-  the menu bar/tool bar/status bar all compose correctly on the same
-  window regardless of call order (shared `WindowContentBox`).
+  bar action; `GuiActionSetEnabled` round-trips without crashing; the
+  menu bar/tool bar/status bar all compose correctly on the same
+  window regardless of call order (shared `WindowContentBox`);
+  `GuiEntrySetText`/`GetText` round-trip correctly through a `GuiGrid`
+  nested inside a `GuiBox`; and `GuiWindowSetContent` composes with
+  StatusBar/MenuBar/ToolBar on the same window without crashing.
+- `examples/widgets_form` - a `GuiBox` containing a `GuiLabel` +
+  `GuiEntry` + `GuiButton`, clicking the button reads the entry and
+  updates the label (confirmed launches and runs without crashing on
+  this host; this session's own screenshot tooling wasn't available
+  for a live capture here, unlike the Haiku-hosted examples elsewhere
+  in this ecosystem - `examples/verify`'s own headless checks above are
+  the primary verification for this round).
 
 ## See also
 
