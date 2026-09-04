@@ -165,6 +165,13 @@ CALL GuiBoxAddChild(constraintsBox, constraintsGrid.handle)
 CALL GuiBoxAddChild(widgetsBox, constraintsBox.handle)
 PRINT "Round 2 constraints (GuiBoxAddChildEx/GuiGridAttachEx/GuiGridSetColumnWeight/SetRowWeight) ran without crashing"
 
+' 7. Round 3: explicit min/max size. GuiWidgetSetMaxSize is a
+' documented no-op on this backend (real GTK4 has no generic
+' per-widget maximum-size API) - this confirms neither call crashes.
+CALL GuiWidgetSetMinSize(fixedBtn.handle, 200, 40)
+CALL GuiWidgetSetMaxSize(fixedBtn.handle, 300, 60)
+PRINT "Round 3 min/max size (GuiWidgetSetMinSize/SetMaxSize) ran without crashing"
+
 ' 5. GuiTimer, and (via its own callback) GuiApplicationQuit stopping
 ' GuiApplicationRun - a more realistic shape than calling Quit before
 ' Run even starts (which this backend tolerates with a noisy assertion,

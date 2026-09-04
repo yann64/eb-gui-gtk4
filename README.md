@@ -270,6 +270,25 @@ loss - see `eb-gui`'s own README). `GuiGridSetColumnWeight`/
 `SetRowWeight` are a documented no-op here - `GtkGrid` has no
 per-column/row weight concept in real GTK4 at all.
 
+Round 3 explicit min/max size:
+
+```basic
+CALL GuiWidgetSetMinSize(entry.handle, 200, 40)
+CALL GuiWidgetSetMaxSize(entry.handle, 400, 40)   ' documented no-op here
+```
+
+`GuiWidgetSetMinSize` is a direct pass-through to the existing
+`WidgetSetSizeRequest` (`gtk_widget_set_size_request`, already bound -
+no prerequisite native work needed this round). `GuiWidgetSetMaxSize`
+is a documented, accepted no-op - real GTK4 has no generic per-widget
+maximum-size API at all (confirmed via this host's own `gtkwidget.h`,
+not assumed - only individual widget classes like `GtkLabel` have
+unrelated, narrower properties). Note min/max size are a floor/ceiling
+on what the layout may allocate, not a growth mechanism by
+themselves - pair with `GuiBoxAddChildEx`'s own `expand` parameter
+(Round 2) if you want a constrained item to also visibly grow into
+leftover space.
+
 ## Verifying
 
 - `examples/hello_window` - a plain window appears, title set through
@@ -300,7 +319,8 @@ per-column/row weight concept in real GTK4 at all.
   StatusBar/MenuBar/ToolBar on the same window without crashing; and
   `GuiBoxAddChildEx`/`GuiGridAttachEx`/`GuiGridSetColumnWeight`/
   `SetRowWeight` (Round 2 constraints) run without crashing, including
-  a `GuiGrid` nested inside a constrained `GuiBox` child.
+  a `GuiGrid` nested inside a constrained `GuiBox` child; and
+  `GuiWidgetSetMinSize`/`SetMaxSize` (Round 3) run without crashing.
 - `examples/widgets_form` - a `GuiBox` containing a `GuiLabel` +
   `GuiEntry` + `GuiButton`, clicking the button reads the entry and
   updates the label (confirmed launches and runs without crashing on

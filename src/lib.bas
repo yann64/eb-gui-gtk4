@@ -580,6 +580,20 @@ END SUB
 SUB GuiGridSetRowWeight(gr AS GuiGrid, row AS INTEGER, weight AS SINGLE)
 END SUB
 
+''' Direct pass-through to gtk_widget_set_size_request - already real
+''' and bound, no prerequisite native work needed this round.
+SUB GuiWidgetSetMinSize(handle AS ANY PTR, width AS INTEGER, height AS INTEGER)
+    DIM w AS Widget
+    w.handle = handle
+    CALL WidgetSetSizeRequest(w, width, height)
+END SUB
+
+''' A documented, accepted no-op - real GTK4 has no generic per-widget
+''' maximum-size concept at all (confirmed absent upstream, not a
+''' binding gap - see eb-gui's own README).
+SUB GuiWidgetSetMaxSize(handle AS ANY PTR, width AS INTEGER, height AS INTEGER)
+END SUB
+
 ''' Appends `content` into the window's existing `WindowContentBox` -
 ''' call after `GuiWindowMenuBar`/`GuiWindowToolBar` and before
 ''' `GuiWindowStatusBar` for the expected top-to-bottom visual order
