@@ -26,7 +26,46 @@ End Extern
 
 Extern "C" Lib "ebguigtk4"
     Declare Sub eb_gui_gtk4_window_set_close_callback(ByVal window AS ANY PTR, ByVal cb AS ANY PTR, ByVal userData AS ANY PTR)
+    Declare Sub eb_gui_gtk4_action_connect_triggered(ByVal action AS ANY PTR, ByVal cb AS ANY PTR, ByVal userData AS ANY PTR)
 End Extern
+
+''' Small per-adapter association table (handle -> handle) - makes up
+''' for two gaps in what eb-gtk4's own public iface.bas exposes: (1)
+''' g_object_get_data/set_data are raw-layer-only, not exported across
+''' a --lib boundary, so this adapter can't tag a GTK4 handle with its
+''' own data the way eb-gtk4 itself does internally for
+''' WindowContentBox/WindowMenuBar/WindowToolBar; and (2)
+''' GuiWindowStatusBar needs its own auto-created-once memory, since
+''' (unlike WindowMenuBar/WindowToolBar) it's this adapter's OWN
+''' composition on top of eb-gtk4's public API, not something eb-gtk4
+''' tracks on its behalf. Two uses below: recording which window a
+''' Menu/ToolBar belongs to (so GuiMenuAddAction/GuiToolBarAddAction
+''' know which window's action map to register a fresh Action on), and
+''' recording a window's own already-created StatusBar. A linear scan
+''' over a small, fixed-size array - completely adequate for the
+''' handful of windows/menus/tool bars a real application creates.
+DIM ebGuiGtk4AssocKeys(128) AS ANY PTR
+DIM ebGuiGtk4AssocVals(128) AS ANY PTR
+DIM ebGuiGtk4AssocCount AS INTEGER
+
+SUB EbGuiGtk4AssocSet(key AS ANY PTR, val AS ANY PTR)
+    ebGuiGtk4AssocKeys(ebGuiGtk4AssocCount) = key
+    ebGuiGtk4AssocVals(ebGuiGtk4AssocCount) = val
+    ebGuiGtk4AssocCount = ebGuiGtk4AssocCount + 1
+END SUB
+
+FUNCTION EbGuiGtk4AssocGet(key AS ANY PTR) AS ANY PTR
+    DIM i AS INTEGER
+    FOR i = 0 TO ebGuiGtk4AssocCount - 1
+        IF ebGuiGtk4AssocKeys(i) = key THEN
+            EbGuiGtk4AssocGet = ebGuiGtk4AssocVals(i)
+            EXIT FUNCTION
+        END IF
+    NEXT i
+    EbGuiGtk4AssocGet = 0
+END FUNCTION
+
+DIM ebGuiGtk4ActionCounter AS INTEGER
 
 FUNCTION NewGuiApplication(appId AS ZSTRING) AS GuiApplication
     DIM realApp AS Application
@@ -150,20 +189,33 @@ SUB GuiWindowDestroy(win AS GuiWindow)
 END SUB
 
 ''' Real GtkStatusbar is auto-created and owned by no particular
-''' window - this adapter creates one and packs it as the window's own
-''' child the first time it's requested, matching GuiWindowStatusBar's
-''' "auto-created, one per window" contract. Only works if the window's
-''' child hasn't already been set to something else (WindowSetChild
-''' replaces it) - a real limitation of this backend (GTK4's window has
-''' exactly one direct child), not a defect in this adapter; an
-''' application that also wants other content should wrap it and the
-''' status bar together in its own Box before this is ever called.
+''' window - this adapter creates one and packs it into the window's
+''' own shared content box (WindowContentBox, eb-gtk4 v0.11.0+) the
+''' first time it's requested, matching GuiWindowStatusBar's
+''' "auto-created, one per window" contract; a second call for the same
+''' window returns the same StatusBar rather than creating another
+''' (tracked via this adapter's own association table, since - unlike
+''' WindowMenuBar/WindowToolBar - eb-gtk4 has no built-in memory of
+''' "the" status bar for a window). Composes correctly with
+''' GuiWindowMenuBar/GuiWindowToolBar regardless of call order, since
+''' all three now share the same underlying content box.
 FUNCTION GuiWindowStatusBar(win AS GuiWindow) AS GuiStatusBar
+    DIM existing AS ANY PTR
+    existing = EbGuiGtk4AssocGet(win.handle)
+    IF existing <> 0 THEN
+        DIM existingResult AS GuiStatusBar
+        existingResult.handle = existing
+        GuiWindowStatusBar = existingResult
+        EXIT FUNCTION
+    END IF
     DIM realWin AS Window
     realWin.handle = win.handle
     DIM sb AS StatusBar
     sb = NewStatusBar()
-    CALL WindowSetChild(realWin, sb)
+    DIM contentBox AS Box
+    contentBox = WindowContentBox(realWin)
+    CALL BoxAppend(contentBox, sb)
+    CALL EbGuiGtk4AssocSet(win.handle, sb.handle)
     DIM result AS GuiStatusBar
     result.handle = sb.handle
     GuiWindowStatusBar = result
@@ -234,4 +286,133 @@ SUB GuiTimerDestroy(t AS GuiTimer)
     DIM realT AS GtkTimer
     realT.handle = t.handle
     CALL GtkTimerDestroy(realT)
+END SUB
+
+''' Auto-created and installed at the top of the window's shared
+''' content box the first time this is called for `win` - eb-gtk4's own
+''' WindowMenuBar (v0.11.0+) already tracks this internally, so no use
+''' of this adapter's own association table is needed here.
+FUNCTION GuiWindowMenuBar(win AS GuiWindow) AS GuiMenuBar
+    DIM realWin AS Window
+    realWin.handle = win.handle
+    DIM bar AS MenuBar
+    bar = WindowMenuBar(realWin)
+    CALL EbGuiGtk4AssocSet(bar.handle, win.handle)
+    DIM result AS GuiMenuBar
+    result.handle = bar.handle
+    GuiWindowMenuBar = result
+END FUNCTION
+
+FUNCTION GuiMenuBarAddMenu(bar AS GuiMenuBar, title AS ZSTRING) AS GuiMenu
+    DIM realBar AS MenuBar
+    realBar.handle = bar.handle
+    DIM m AS Menu
+    m = MenuBarAddMenu(realBar, title)
+    DIM winHandle AS ANY PTR
+    winHandle = EbGuiGtk4AssocGet(bar.handle)
+    CALL EbGuiGtk4AssocSet(m.handle, winHandle)
+    DIM result AS GuiMenu
+    result.handle = m.handle
+    GuiMenuBarAddMenu = result
+END FUNCTION
+
+''' Real GTK4 actions (GSimpleAction) are shareable, window-scoped
+''' objects independent of any menu - this contract instead follows
+''' Qt6's simpler "create fresh per call" shape (see eb-gui's own
+''' README), so a brand-new, uniquely-named Action is registered on
+''' `guiMenu`'s owning window (tracked via this adapter's association
+''' table, since GTK4's own action map needs a real Window, not just a
+''' Menu) every time this is called.
+FUNCTION GuiMenuAddAction(guiMenu AS GuiMenu, text AS ZSTRING) AS GuiAction
+    DIM winHandle AS ANY PTR
+    winHandle = EbGuiGtk4AssocGet(guiMenu.handle)
+    DIM realWin AS Window
+    realWin.handle = winHandle
+    ebGuiGtk4ActionCounter = ebGuiGtk4ActionCounter + 1
+    DIM act AS Action
+    act = NewAction(realWin, "eb_gui_action_" & Str(ebGuiGtk4ActionCounter))
+    DIM realMenu AS Menu
+    realMenu.handle = guiMenu.handle
+    CALL MenuAddAction(realMenu, act, text)
+    DIM result AS GuiAction
+    result.handle = act.handle
+    GuiMenuAddAction = result
+END FUNCTION
+
+''' Bridged to GTK4's real GSimpleAction "activate" signal (different
+''' argument shape) by this package's own native trampoline - see
+''' native/shim_actiontrigger.h.
+SUB GuiActionConnectTriggered(a AS GuiAction, handler AS ANY PTR, userData AS ANY PTR)
+    CALL eb_gui_gtk4_action_connect_triggered(a.handle, handler, userData)
+END SUB
+
+SUB GuiActionSetEnabled(a AS GuiAction, enabled AS INTEGER)
+    DIM realAction AS Action
+    realAction.handle = a.handle
+    CALL ActionSetEnabled(realAction, enabled)
+END SUB
+
+''' Not bound at all on this backend's own Action (eb-gtk4 has no
+''' ActionIsEnabled) - always reports enabled, since GSimpleAction
+''' defaults to enabled and this adapter never disables one on its own.
+FUNCTION GuiActionIsEnabled(a AS GuiAction) AS INTEGER
+    GuiActionIsEnabled = 1
+END FUNCTION
+
+SUB GuiActionTrigger(a AS GuiAction)
+    DIM realAction AS Action
+    realAction.handle = a.handle
+    CALL ActionActivate(realAction)
+END SUB
+
+''' Auto-created (an empty Box of Buttons, see eb-gtk4's own toolbar.bas
+''' top comment) and installed into the window's shared content box the
+''' first time this is called for `win` - eb-gtk4's own WindowToolBar
+''' (v0.11.0+) already tracks this internally, so no use of this
+''' adapter's own association table is needed here.
+FUNCTION GuiWindowToolBar(win AS GuiWindow) AS GuiToolBar
+    DIM realWin AS Window
+    realWin.handle = win.handle
+    DIM tb AS ToolBar
+    tb = WindowToolBar(realWin)
+    CALL EbGuiGtk4AssocSet(tb.handle, win.handle)
+    DIM result AS GuiToolBar
+    result.handle = tb.handle
+    GuiWindowToolBar = result
+END FUNCTION
+
+''' Real GTK4 tool bars (see eb-gtk4's own toolbar.bas) are plain
+''' Buttons, not Actions - this adapter bridges the gap by creating a
+''' real window-scoped Action alongside the button (same
+''' "create fresh per call" shape GuiMenuAddAction uses) and forwarding
+''' the button's own "clicked" signal into the action's "activate", so
+''' the returned GuiAction behaves identically whether it came from a
+''' menu or a tool bar.
+FUNCTION GuiToolBarAddAction(bar AS GuiToolBar, text AS ZSTRING) AS GuiAction
+    DIM winHandle AS ANY PTR
+    winHandle = EbGuiGtk4AssocGet(bar.handle)
+    DIM realWin AS Window
+    realWin.handle = winHandle
+    ebGuiGtk4ActionCounter = ebGuiGtk4ActionCounter + 1
+    DIM act AS Action
+    act = NewAction(realWin, "eb_gui_action_" & Str(ebGuiGtk4ActionCounter))
+    DIM realBar AS ToolBar
+    realBar.handle = bar.handle
+    DIM btn AS Button
+    btn = ToolBarAddButton(realBar, text)
+    CALL ObjConnect(btn, "clicked", @EbGuiGtk4ToolbarButtonClicked, act.handle)
+    DIM result AS GuiAction
+    result.handle = act.handle
+    GuiToolBarAddAction = result
+END FUNCTION
+
+''' Fixed, single, reusable forwarding handler for GuiToolBarAddAction -
+''' the per-instance data is `userData` (the paired Action's own
+''' handle), the standard callback-with-userData trampoling pattern
+''' this whole ecosystem already relies on (eBasic itself has no way to
+''' dynamically generate a distinct callback per call).
+SUB EbGuiGtk4ToolbarButtonClicked(btn AS GObj PTR, userData AS ANY PTR)
+    DIM act AS Action
+    act.handle = userData
+    CALL ActionActivate(act)
 END SUB

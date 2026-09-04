@@ -1,5 +1,5 @@
-// eb-gui-gtk4 native shim - the ONE piece of native code this adapter
-// needs. eb-gui's own contract for GuiWindowSetCloseCallback matches
+// eb-gui-gtk4 native shim (one of two - see also shim_actiontrigger.h).
+// eb-gui's own contract for GuiWindowSetCloseCallback matches
 // eb-haiku's real BWindow::QuitRequested shape exactly
 // (`FUNCTION(userData AS ANY PTR) AS INTEGER`, nonzero = allow the
 // close) - deliberately chosen so eb-gui-qt6 needs ZERO native code

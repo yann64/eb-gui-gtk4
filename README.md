@@ -6,15 +6,46 @@ cross-toolkit `Application`/`Window` API, managed with `ebpm`.
 
 ## Status
 
-Phase 1 (`Application`/`Window`) plus the `StatusBar`/`Timer` half of
-Phase 2, implementing every function in `eb-gui`'s own contract by
-calling into [`eb-gtk4`](https://github.com/yann64/eb-gtk4). One piece
-of native code (`native/shim_closecallback.h`/`.cpp`) - see "Why this
-package needs a tiny native shim" below. `GuiTimer` maps onto
-`eb-gtk4`'s own `GtkTimer` (itself backed by a small native shim in
-that package - see `eb-gtk4`'s own README); `GuiTimerDestroy` is
-meaningful here (unlike on Qt6), since `GtkTimer` isn't a GObject and
-needs its own explicit free.
+Phase 1 (`Application`/`Window`) plus all of Phase 2
+(`StatusBar`/`Timer`/`Menu`/`Toolbar`/`Action`), implementing every
+function in `eb-gui`'s own contract by calling into
+[`eb-gtk4`](https://github.com/yann64/eb-gtk4). Two pieces of native
+code (`native/shim_closecallback.h`/`.cpp`,
+`native/shim_actiontrigger.h`/`.cpp`) - see "Why this package needs a
+tiny native shim" below. `GuiTimer` maps onto `eb-gtk4`'s own
+`GtkTimer` (itself backed by a small native shim in that package - see
+`eb-gtk4`'s own README); `GuiTimerDestroy` is meaningful here (unlike
+on Qt6), since `GtkTimer` isn't a GObject and needs its own explicit
+free.
+
+`GuiMenuAddAction`/`GuiToolBarAddAction` paper over a real capability
+mismatch: real GTK4 actions (`GSimpleAction`) are shareable,
+window-scoped objects independent of any menu, but `eb-gui`'s own
+contract follows Qt6's simpler "create a fresh action per call" shape
+instead (see `eb-gui`'s own README). This adapter fakes that shape on
+top of GTK4's richer model by registering a brand-new, uniquely-named
+action on the owning window every time either function is called -
+tracked via a small association table this package keeps for itself
+(`EbGuiGtk4AssocSet`/`Get` in `src/lib.bas`), since `eb-gtk4`'s own
+`g_object_get_data`/`set_data` (which it uses internally for the same
+purpose) are raw-layer-only and don't cross the `--lib` package
+boundary into this adapter's own public surface. The same table also
+gives `GuiWindowStatusBar` its own auto-created-once memory (unlike
+`GuiWindowMenuBar`/`GuiWindowToolBar`, which get that for free from
+`eb-gtk4`'s own `WindowMenuBar`/`WindowToolBar`) and now composes it
+with menu/toolbar through the same shared `WindowContentBox`
+(`eb-gtk4` v0.11.0+) regardless of call order.
+
+Real GTK4 tool bars are plain `Box`-of-`Button`s (GTK4 removed
+`GtkToolbar` upstream), not action-based - `GuiToolBarAddAction` bridges
+this by creating a real window-scoped `Action` alongside the button and
+forwarding the button's own `"clicked"` signal into the action's
+`"activate"`, via one fixed, reusable forwarding handler
+(`EbGuiGtk4ToolbarButtonClicked`) parameterized by `userData` (the
+standard callback-with-userData trampolining pattern this whole
+ecosystem already relies on, since eBasic can't generate a distinct
+closure per call) - so the returned `GuiAction` behaves identically
+whether it came from a menu or a tool bar.
 
 ## Building
 
@@ -56,6 +87,14 @@ dynamically-stored pointer). So bridging GTK4's shape/polarity to
 `native/shim_closecallback.cpp`, a plain C function (no `Q_OBJECT`-style
 subclass needed at all, since GTK4's signal system already dispatches
 through ordinary function pointers via `g_signal_connect_data`).
+
+The same reasoning applies to `GuiActionConnectTriggered`: `eb-gui`'s
+contract handler shape is `SUB(userData AS ANY PTR)` (matching
+`eb-qt6`'s own `ActionConnectTriggered` verbatim), but real
+`GSimpleAction`'s `"activate"` signal has a different shape
+(`void (*)(GSimpleAction*, GVariant*, gpointer)`) - `native/
+shim_actiontrigger.cpp` bridges it the same way, discarding the two
+leading GTK4-specific arguments before forwarding.
 
 ## A real bug caught before shipping: window construction needs eager registration
 
@@ -139,6 +178,28 @@ CALL GuiTimerConnectTimeout(t, @OnTick, 0)
 CALL GuiTimerStart(t)
 ```
 
+`GuiMenuBar`/`GuiToolBar`/`GuiAction`:
+
+```basic
+DIM bar AS GuiMenuBar
+bar = GuiWindowMenuBar(win)   ' auto-created, one per window
+DIM fileMenu AS GuiMenu
+fileMenu = GuiMenuBarAddMenu(bar, "File")
+DIM openAction AS GuiAction
+openAction = GuiMenuAddAction(fileMenu, "Open...")
+
+SUB OnOpen(userData AS ANY PTR)
+    PRINT "open"
+END SUB
+CALL GuiActionConnectTriggered(openAction, @OnOpen, 0)
+
+DIM tb AS GuiToolBar
+tb = GuiWindowToolBar(win)   ' auto-created, one per window
+DIM goAction AS GuiAction
+goAction = GuiToolBarAddAction(tb, "Go")
+CALL GuiActionConnectTriggered(goAction, @OnOpen, 0)
+```
+
 ## Verifying
 
 - `examples/hello_window` - a plain window appears, title set through
@@ -157,7 +218,13 @@ CALL GuiTimerStart(t)
   calls it) - the program exiting promptly rather than hanging proves
   the interval/single-shot/callback-dispatch and quit all genuinely
   work together, a more realistic shape than an earlier quit-before-run
-  ordering this same example used before `GuiTimer` existed.
+  ordering this same example used before `GuiTimer` existed;
+  `GuiWindowMenuBar`/`GuiWindowToolBar` return the identical handle on
+  repeated calls; `GuiActionTrigger` genuinely reaches a connected
+  `GuiActionConnectTriggered` handler for both a menu action and a tool
+  bar action; `GuiActionSetEnabled` round-trips without crashing; and
+  the menu bar/tool bar/status bar all compose correctly on the same
+  window regardless of call order (shared `WindowContentBox`).
 
 ## See also
 
