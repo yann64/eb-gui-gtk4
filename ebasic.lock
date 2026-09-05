@@ -8,4 +8,4 @@ commit = "be423cc6bf776e0d0a70cc5e23416ca82f3a2d75"
 [[package]]
 name = "gui"
 path = "/home/yann64/.ebpm/cache/git/https___github.com_yann64_eb-gui.git"
-commit = "7f24e8784facbeb437684322fa104d187e2fbf71"
+commit = "7c926fb4ba327c449073230978c025489882cdcb"

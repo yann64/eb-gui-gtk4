@@ -474,6 +474,16 @@ the full Round 7 writeup, including the real Haiku hardware finding
 that turned this into a no-op on ALL THREE backends, not just this
 one.
 
+## Widgets (Round 8) - `GuiTextViewConnectTextChanged`
+
+Reuses the Round 4 generic `eb_gui_gtk4_connect_userdata_signal`
+trampoline, connected on the text view's own BUFFER (`TextViewGetBuffer`)
+rather than the view itself - real `GtkTextBuffer`'s own `"changed"`
+signal has the identical `(instance, user_data)` shape as
+`"clicked"`/`"changed"`/`"toggled"`/`"value-changed"`, verified via a
+standalone spike before wiring in. No new native code needed - the
+existing trampoline covers this signal exactly as-is.
+
 ## Verifying
 
 - `examples/hello_window` - a plain window appears, title set through
@@ -523,7 +533,12 @@ one.
   `GuiListBoxSetSelectedIndex` call, not a faked signal emission, so
   the real 3-argument signal shape is actually exercised); and
   `GuiWidgetSetPreferredSize` (Round 7) runs without crashing (a
-  documented no-op on this backend - see above).
+  documented no-op on this backend - see above); and
+  `GuiTextViewConnectTextChanged` (Round 8) fires correctly on a
+  genuine `GuiTextViewSetText` call, with a `userData` delivery
+  regression check on the reused Round 4 trampoline (now connected to
+  `GtkTextBuffer`'s own `"changed"` signal instead of a widget's own
+  signal for the first time).
 - `examples/widgets_form` - a `GuiBox` containing a `GuiLabel` +
   `GuiEntry` + `GuiButton`, clicking the button reads the entry and
   updates the label (confirmed launches and runs without crashing on

@@ -963,3 +963,17 @@ END SUB
 ''' assumed (see eb-gui's own README).
 SUB GuiWidgetSetPreferredSize(handle AS ANY PTR, width AS INTEGER, height AS INTEGER)
 END SUB
+
+''' Reuses the Round 4 generic trampoline on the view's own BUFFER
+''' (not the view itself) - real GtkTextBuffer's own "changed" signal
+''' has the identical (instance, user_data) shape as
+''' "clicked"/"changed"/"toggled"/"value-changed" - verified via a
+''' standalone spike before wiring in, same rigor as every prior
+''' native-signal addition this ecosystem has made.
+SUB GuiTextViewConnectTextChanged(tv AS GuiTextView, handler AS ANY PTR, userData AS ANY PTR)
+    DIM realView AS TextView
+    realView.handle = tv.handle
+    DIM buf AS TextBuffer
+    buf = TextViewGetBuffer(realView)
+    CALL eb_gui_gtk4_connect_userdata_signal(buf.handle, "changed", handler, userData)
+END SUB

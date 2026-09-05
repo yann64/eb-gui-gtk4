@@ -315,6 +315,24 @@ PRINT "Round 6 widgets (ListBox/TextView) ran without crashing"
 CALL GuiWidgetSetPreferredSize(goBtn.handle, 200, 60)
 PRINT "Round 7 (GuiWidgetSetPreferredSize) ran without crashing"
 
+' 12. Round 8: GuiTextViewConnectTextChanged - reuses the Round 4
+' trampoline on the view's own buffer, verified real via this
+' regression check (a genuine GuiTextViewSetText call, not a faked
+' signal emission).
+DIM textViewMarker AS INTEGER
+textViewMarker = 24680
+DIM textViewReceived AS ANY PTR
+SUB OnTextViewChanged(userData AS ANY PTR)
+    textViewReceived = userData
+END SUB
+CALL GuiTextViewConnectTextChanged(tv, @OnTextViewChanged, @textViewMarker)
+CALL GuiTextViewSetText(tv, "changed!")
+IF textViewReceived = @textViewMarker THEN
+    PRINT "GuiTextViewConnectTextChanged userData delivery: correct"
+ELSE
+    PRINT "GuiTextViewConnectTextChanged userData delivery: WRONG - regression!"
+END IF
+
 ' 5. GuiTimer, and (via its own callback) GuiApplicationQuit stopping
 ' GuiApplicationRun - a more realistic shape than calling Quit before
 ' Run even starts (which this backend tolerates with a noisy assertion,
