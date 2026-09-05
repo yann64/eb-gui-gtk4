@@ -955,3 +955,11 @@ SUB GuiTextViewSetEditable(tv AS GuiTextView, editable AS INTEGER)
     realView.handle = tv.handle
     CALL TextViewSetEditable(realView, editable)
 END SUB
+
+''' A documented, accepted no-op - real GTK4's own "natural size" is a
+''' READ-ONLY query (gtk_widget_measure, computed per-widget-class by
+''' its own measure vfunc), not a settable property on the generic
+''' GtkWidget base - confirmed via direct header inspection, not
+''' assumed (see eb-gui's own README).
+SUB GuiWidgetSetPreferredSize(handle AS ANY PTR, width AS INTEGER, height AS INTEGER)
+END SUB

@@ -463,6 +463,17 @@ limitation).
 child, making a standalone scrollbar binding low-value (see `eb-gui`'s
 own README for the full cross-backend reasoning).
 
+## Widgets (Round 7) - settable preferred size, a documented no-op
+
+`GuiWidgetSetPreferredSize` is a documented, accepted no-op on this
+backend - real GTK4's own "natural size" is a READ-ONLY query
+(`gtk_widget_measure`, computed per-widget-class by its own `measure`
+vfunc), not a settable property on the generic `GtkWidget` base -
+confirmed via direct header inspection. See `eb-gui`'s own README for
+the full Round 7 writeup, including the real Haiku hardware finding
+that turned this into a no-op on ALL THREE backends, not just this
+one.
+
 ## Verifying
 
 - `examples/hello_window` - a plain window appears, title set through
@@ -510,7 +521,9 @@ own README for the full cross-backend reasoning).
   third `userData` delivery regression check on the NEW dedicated
   3-arg `"row-selected"` trampoline (triggered via a genuine
   `GuiListBoxSetSelectedIndex` call, not a faked signal emission, so
-  the real 3-argument signal shape is actually exercised).
+  the real 3-argument signal shape is actually exercised); and
+  `GuiWidgetSetPreferredSize` (Round 7) runs without crashing (a
+  documented no-op on this backend - see above).
 - `examples/widgets_form` - a `GuiBox` containing a `GuiLabel` +
   `GuiEntry` + `GuiButton`, clicking the button reads the entry and
   updates the label (confirmed launches and runs without crashing on

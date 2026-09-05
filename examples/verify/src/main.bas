@@ -307,6 +307,14 @@ CALL GuiTextViewSetEditable(tv, 0)
 CALL GuiTextViewSetEditable(tv, 1)
 PRINT "Round 6 widgets (ListBox/TextView) ran without crashing"
 
+' 11. Round 7: settable preferred size - a documented no-op on this
+' backend (real GTK4's own "natural size" is a read-only vfunc query,
+' not a settable property - see eb-gui's own README). "Didn't crash" is
+' the bar here; the real behavioral proof is on eb-gui-haiku, where
+' this function is genuinely real.
+CALL GuiWidgetSetPreferredSize(goBtn.handle, 200, 60)
+PRINT "Round 7 (GuiWidgetSetPreferredSize) ran without crashing"
+
 ' 5. GuiTimer, and (via its own callback) GuiApplicationQuit stopping
 ' GuiApplicationRun - a more realistic shape than calling Quit before
 ' Run even starts (which this backend tolerates with a noisy assertion,
